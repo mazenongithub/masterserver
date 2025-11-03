@@ -4,6 +4,8 @@ import fs from 'fs'
 import db, {testConnection} from './config/db.js';
 import mongoose from 'mongoose'
 import { connectDB } from './config/mongodb.js';
+import appbaseddriver from './routes/appbaseddriver.js';
+import cors from 'cors';
 
 // await testConnection()
 testConnection()
@@ -49,9 +51,38 @@ const app = express();
 
 const port = process.env.PORT || 3000;
 
+
+
+
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://civilengineer.io',
+  'https://appbaseddriver.civilengineer.io',
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+}));
+
+app.use(express.json())
+
+
+
+// ...your routes go here...
+
+
 app.get("/", (req, res) => {
     res.send(`Server running in ${process.env.NODE_ENV} mode`)
 })
+
+appbaseddriver(app)
 
 
 
