@@ -73,6 +73,8 @@ app.use(cors({
 
 app.use(express.json({ limit: '50mb'}))
 app.use(sessionMiddleware);
+app.set("trust proxy", 1); // trust first proxy
+
 
 
 

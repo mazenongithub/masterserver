@@ -19,7 +19,7 @@ const sessionMiddleware = session({
   cookie: {
     httpOnly: true,       // prevents client-side JS access
     secure: process.env.NODE_ENV === "production", // true if using HTTPS
-    sameSite: "lax",      // helps prevent CSRF
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // <-- important for Cloudflare/HTTPS
     maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
   },
 });
