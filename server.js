@@ -71,6 +71,9 @@ app.use(cors({
   credentials: true,
 }));
 
+const isProduction = process.env.NODE_ENV === "production";
+if (isProduction) app.set("trust proxy", 1);
+
 app.use(express.json({ limit: '50mb'}))
 app.use(sessionMiddleware);
 app.set("trust proxy", 1); // trust first proxy
