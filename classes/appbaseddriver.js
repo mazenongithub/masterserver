@@ -194,6 +194,15 @@ class AppBasedDriver {
         }
     }
 
+    async findDriverByID(driverId) {
+        try {
+            const driver = await MyDriver.findById(driverId);
+            return driver || { message: "Driver not found" };
+        } catch (err) {
+            return { message: `Error finding driver: ${err.message}` };
+        }
+    }
+
 
 }
 

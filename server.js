@@ -6,23 +6,23 @@ import mongoose from 'mongoose'
 import { connectDB } from './config/mongodb.js';
 import appbaseddriver from './routes/appbaseddriver.js';
 import cors from 'cors';
+import sessionMiddleware from "./middleware/session.js";
 
 // await testConnection()
-testConnection()
-.then(succ=> {
+(async () => {
+  try {
+    await testConnection();
+    console.log("✅ Test connection successful");
 
-})
-.catch(err => {
-    console.log(err)
-})
+    await connectDB();
+    console.log("✅ Database connected successfully");
 
-connectDB()
-.then(succ=> {
+  } catch (err) {
+    console.error("❌ Connection error:", err.message || err);
+    process.exit(1); // 🔴 Exit with error code if connection fails
+  }
+})();
 
-})
-.catch(err => {
-    console.log(err)
-})
 
 
 
@@ -71,7 +71,8 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json())
+app.use(express.json({ limit: '50mb'}))
+app.use(sessionMiddleware);
 
 
 
