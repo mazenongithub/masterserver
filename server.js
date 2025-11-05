@@ -57,6 +57,8 @@ const port = process.env.PORT || 3000;
 const allowedOrigins = [
   'http://localhost:3000',
   'https://civilengineer.io',
+  'http://civilengineer.io',
+  'http://appbaseddriver.civilengineer.io',
   'https://appbaseddriver.civilengineer.io',
 ];
 
