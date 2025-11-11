@@ -381,6 +381,21 @@ class GFK {
         }
     }
 
+    async loadProjects(companyid) {
+
+        try {
+
+            let projects = await MyProjects.findOne({companyid})
+            return projects.projects;
+
+        } catch(err) {
+
+             console.error('Error loading projects:', err);
+            return { message: `Error: Could not load projects - ${err.message}` };
+
+        }
+    }
+
 
 
 
