@@ -5,6 +5,7 @@ import db, {testConnection} from './config/db.js';
 import mongoose from 'mongoose'
 import { connectDB } from './config/mongodb.js';
 import appbaseddriver from './routes/appbaseddriver.js';
+import gfk from './routes/gfk.js'
 import cors from 'cors';
 import sessionMiddleware from "./middleware/session.js";
 
@@ -59,7 +60,7 @@ const allowedOrigins = [
   'https://civilengineer.io',
   'http://civilengineer.io',
   'http://appbaseddriver.civilengineer.io',
-  'https://appbaseddriver.civilengineer.io',
+  'https://appbaseddriver.civile//ngineer.io',
 ];
 
 app.use(cors({
@@ -90,7 +91,8 @@ app.get("/", (req, res) => {
     res.send(`Server running in ${process.env.NODE_ENV} mode`)
 })
 
-appbaseddriver(app)
+appbaseddriver(app);
+gfk(app);
 
 
 
