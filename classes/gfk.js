@@ -255,6 +255,44 @@ class GFK {
         }
     }
 
+    async loadBorings(projectid) {
+        try {
+            const filter = { projectid };
+
+            const updatedBorings = await MyBorings.findOne(filter);
+
+            // ✅ Return empty array if no document found
+            if (!updatedBorings || !Array.isArray(updatedBorings.borings)) {
+                return [];
+            }
+
+            // Sort borings by boringnumber
+            updatedBorings.borings.sort((a, b) => {
+                const numA = Number(a.boringnumber) || 0;
+                const numB = Number(b.boringnumber) || 0;
+                return numA - numB;
+            });
+
+            // Sort samples by depth inside each boring
+            updatedBorings.borings.forEach(boring => {
+                if (Array.isArray(boring.samples)) {
+                    boring.samples.sort((a, b) => {
+                        const depthA = Number(a.depth) || 0;
+                        const depthB = Number(b.depth) || 0;
+                        return depthA - depthB;
+                    });
+                }
+            });
+
+            return updatedBorings.borings;
+
+        } catch (err) {
+            console.error('Error loading borings:', err);
+            return [];
+        }
+    }
+
+
 
     async saveBorings(myBorings) {
         try {
@@ -275,6 +313,38 @@ class GFK {
             return { message: `Error: Could not save borings - ${err.message}` };
         }
     }
+
+    async loadFieldReports(projectid) {
+        try {
+            if (!projectid) {
+                throw new Error("Missing project ID.");
+            }
+
+            const filter = { projectid };
+            const fieldReportDoc = await FieldReports.findOne(filter);
+
+            // Return empty array if no document found
+            if (!fieldReportDoc || !Array.isArray(fieldReportDoc.fieldreports)) {
+                console.warn(`⚠️ No field reports found for project ${projectid}`);
+                return [];
+            }
+
+            // Sort field reports by datereport (ascending)
+            const sortedReports = fieldReportDoc.fieldreports.sort((a, b) => {
+                const dateA = new Date(a.datereport);
+                const dateB = new Date(b.datereport);
+                return dateA - dateB;
+            });
+
+            return sortedReports;
+
+        } catch (err) {
+            console.error("❌ Error loading field reports:", err);
+            return [];
+        }
+    }
+
+
 
     async saveFieldReports(fieldReports) {
         try {
@@ -385,12 +455,12 @@ class GFK {
 
         try {
 
-            let projects = await MyProjects.findOne({companyid})
+            let projects = await MyProjects.findOne({ companyid })
             return projects.projects;
 
-        } catch(err) {
+        } catch (err) {
 
-             console.error('Error loading projects:', err);
+            console.error('Error loading projects:', err);
             return { message: `Error: Could not load projects - ${err.message}` };
 
         }
