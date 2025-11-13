@@ -1,11 +1,4 @@
-import mysql from 'mysql2/promise'
 import GFK from '../classes/gfk.js';
-import { createPoolCluster } from 'mysql2';
-import { SaveProjects } from '../../gfk/src/components/actions/api.js';
-
-
-
-
 
 
 export default (app) => {
