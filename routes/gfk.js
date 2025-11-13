@@ -101,7 +101,6 @@ export default (app) => {
                 seismic,
                 ptslab,
                 slope,
-                count: borings.length,
                 hasData: borings.length > 0 || fieldreports.length > 0,
                 message:
                     borings.length === 0 && fieldreports.length === 0

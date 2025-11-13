@@ -209,31 +209,7 @@ const Slopes = mongoose.model("slopes", slopeSchema)
 
 class GFK {
 
-    createSieve(wgt200, wgt100, wgt40, wgt30, wgt10, wgt4, wgt38, wgt34) {
-        return ({ wgt200, wgt100, wgt40, wgt30, wgt10, wgt4, wgt38, wgt34 })
-    }
-
-    createUnconfined(unid, displacement, loadreading) {
-        return ({ unid, displacement, loadreading })
-    }
-
-    createProject(projectid, projectnumber, series, title, sow, clientid, engineerid, projectaddress, projectcity, projectapn) {
-        return ({ projectid, projectnumber, series, title, sow, clientid, engineerid, projectaddress, projectcity, projectapn })
-    }
-
-    createSample(sampleid, sampleset, samplenumber, sampledepth, depth, diameter, samplelength, description, wetwgt, drywgt, wetwgt_2, uscs, spt, tarewgt, tareno, graphiclog, ll, pi, remarks, sptlength) {
-        return ({ sampleid, sampleset, samplenumber, sampledepth, depth, diameter, samplelength, description, wetwgt, drywgt, wetwgt_2, uscs, spt, tarewgt, tareno, graphiclog, ll, pi, remarks, sptlength })
-    }
-
-    createBoring(boringid, projectid, boringnumber, datedrilled, loggedby, drillrig, elevation, diameter,
-        gwdepth, latitude, longitude) {
-
-        return ({
-            boringid, projectid, boringnumber, datedrilled, loggedby, drillrig, elevation, diameter,
-            gwdepth, latitude, longitude
-        })
-
-    }
+  
 
     async saveProjects(myProjects) {
         try {
