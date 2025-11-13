@@ -60,7 +60,7 @@ const allowedOrigins = [
   'https://civilengineer.io',
   'http://civilengineer.io',
   'http://appbaseddriver.civilengineer.io',
-  'https://appbaseddriver.civile//ngineer.io',
+  'https://appbaseddriver.civilengineer.io',
 ];
 
 app.use(cors({

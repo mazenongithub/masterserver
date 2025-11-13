@@ -2,3 +2,4 @@ node_modules
 npm-debug.log*
 .env.*
 db549453520_db_1and1_com.sql
+/scratch/

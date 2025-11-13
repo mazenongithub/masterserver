@@ -387,6 +387,36 @@ class GFK {
         }
     }
 
+    async loadCompactionCurves(projectid) {
+        try {
+            if (!projectid) {
+                throw new Error("Missing project ID.");
+            }
+
+            const filter = { projectid };
+            const compactionDoc = await CompactionCurves.findOne(filter);
+
+            if (!compactionDoc || !Array.isArray(compactionDoc.compactioncurves)) {
+                console.warn(`⚠️ No compaction curves found for project ${projectid}`);
+                return [];
+            }
+
+            // ✅ Sort compaction curves by curvenumber (ascending)
+            const sortedCurves = compactionDoc.compactioncurves.sort((a, b) => {
+                const numA = Number(a.curvenumber) || 0;
+                const numB = Number(b.curvenumber) || 0;
+                return numA - numB;
+            });
+
+            return sortedCurves;
+
+        } catch (err) {
+            console.error("❌ Error loading compaction curves:", err);
+            return [];
+        }
+    }
+
+
 
     async saveSeismic(seismic) {
         try {
@@ -407,6 +437,51 @@ class GFK {
             return { message: `Error: Could not save seismic report - ${err.message}` };
         }
     }
+
+    async loadSeismic(projectid) {
+        try {
+            if (!projectid) {
+                throw new Error("Missing project ID.");
+            }
+
+            const filter = { projectid };
+            const seismicDoc = await SeismicReport.findOne(filter);
+
+            if (!seismicDoc) {
+                console.warn(`⚠️ No seismic data found for project ${projectid}`);
+                return {
+                    vseismic: null,
+                    hseismic: null,
+                    points: []
+                };
+            }
+
+            // ✅ Safely sort seismic points by depth (ascending)
+            const sortedPoints = Array.isArray(seismicDoc.points)
+                ? seismicDoc.points.sort((a, b) => {
+                    const depthA = Number(a.depth) || 0;
+                    const depthB = Number(b.depth) || 0;
+                    return depthA - depthB;
+                })
+                : [];
+
+            // ✅ Return clean, structured data
+            return {
+                siteacceleration: seismicDoc.siteacceleration || null,
+                magnitude: seismicDoc.magnitude || null,
+                points: sortedPoints
+            };
+
+        } catch (err) {
+            console.error("❌ Error loading seismic data:", err);
+            return {
+                siteacceleration: null,
+                magnitude: null,
+                points: []
+            };
+        }
+    }
+
 
 
     async savePTSlab(ptslab) {
@@ -429,6 +504,50 @@ class GFK {
         }
     }
 
+    async loadPTSlab(projectid) {
+        try {
+            if (!projectid) {
+                throw new Error("Missing project ID.");
+            }
+
+            const filter = { projectid };
+            const slabDoc = await PTSlabs.findOne(filter);
+
+            if (!slabDoc) {
+                console.warn(`⚠️ No PT slab data found for project ${projectid}`);
+                return { projectid, sections: [] };
+            }
+
+            // ✅ Sort each section’s layers by numeric toplayer
+            const sortedSections = (slabDoc.sections || []).map(section => {
+                const sortedLayers = Array.isArray(section.layers)
+                    ? [...section.layers].sort((a, b) => {
+                        const topA = Number(a.toplayer) || 0;
+                        const topB = Number(b.toplayer) || 0;
+                        return topA - topB;
+                    })
+                    : [];
+
+                return {
+                    sectionid: section.sectionid || null,
+                    sectionname: section.sectionname || null,
+                    layers: sortedLayers
+                };
+            });
+
+            // ✅ Return clean structured response
+            return {
+                projectid: slabDoc.projectid,
+                sections: sortedSections
+            };
+
+        } catch (err) {
+            console.error("❌ Error loading PT slab:", err);
+            return { projectid, sections: [] };
+        }
+    }
+
+
 
 
     async saveSlope(slope) {
@@ -450,6 +569,67 @@ class GFK {
             return { message: `Error: Could not save slope report - ${err.message}` };
         }
     }
+
+    async loadSlope(projectid) {
+        try {
+            if (!projectid) {
+                throw new Error("Missing project ID.");
+            }
+
+            const filter = { projectid };
+            const slopeDoc = await Slopes.findOne(filter);
+
+            if (!slopeDoc) {
+                console.warn(`⚠️ No slope data found for project ${projectid}`);
+                return { projectid, sections: [] };
+            }
+
+            // ✅ Sort each layer’s points by numeric xcoord
+            const sortedSections = (slopeDoc.sections || []).map(section => {
+                const sortedLayers = (section.layers || []).map(layer => {
+                    const sortedPoints = Array.isArray(layer.points)
+                        ? [...layer.points].sort((a, b) => {
+                            const xA = Number(a.xcoord) || 0;
+                            const xB = Number(b.xcoord) || 0;
+                            return xA - xB;
+                        })
+                        : [];
+
+                    return {
+                        layerid: layer.layerid || null,
+                        layer: layer.layer || null,
+                        layertype: layer.layertype || null,
+                        linetype: layer.linetype || null,
+                        color: layer.color || null,
+                        layerorder: layer.layerorder || null,
+                        points: sortedPoints,
+                        strength: layer.strength || {},
+                        failure: layer.failure || {}
+                    };
+                });
+
+                return {
+                    sectionid: section.sectionid || null,
+                    sectionname: section.sectionname || null,
+                    slices: section.slices || null,
+                    layers: sortedLayers
+                };
+            });
+
+            // ✅ Return cleaned + sorted data
+            return {
+                projectid: slopeDoc.projectid,
+                vseismic: slopeDoc.vseismic || null,
+                hseismic: slopeDoc.hseismic || null,
+                sections: sortedSections
+            };
+
+        } catch (err) {
+            console.error("❌ Error loading slope stability:", err);
+            return { projectid, sections: [] };
+        }
+    }
+
 
     async loadProjects(companyid) {
 
