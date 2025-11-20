@@ -1,7 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import fs from 'fs'
-import db, {testConnection} from './config/db.js';
+import db, { testConnection } from './config/db.js';
 import mongoose from 'mongoose'
 import { connectDB } from './config/mongodb.js';
 import appbaseddriver from './routes/appbaseddriver.js';
@@ -11,6 +11,7 @@ import sessionMiddleware from "./middleware/session.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import https from 'https'
+import http from 'http'
 
 // await testConnection()
 (async () => {
@@ -33,22 +34,22 @@ import https from 'https'
 
 
 const envFile =
-    process.env.NODE_ENV === "production"
-        ? ".env.production"
-        : ".env.development"
+  process.env.NODE_ENV === "production"
+    ? ".env.production"
+    : ".env.development"
 
 if (fs.existsSync(envFile)) {
 
-    dotenv.config({ path: envFile })
+  dotenv.config({ path: envFile })
 
 } else {
-    dotenv.config()
+  dotenv.config()
 
 }
 
-const dbUri = process.env.NODE_ENV === "production" 
-    ? process.env.PROD_DB_URI 
-    : process.env.DEV_DB_URI;
+const dbUri = process.env.NODE_ENV === "production"
+  ? process.env.PROD_DB_URI
+  : process.env.DEV_DB_URI;
 
 
 const app = express();
@@ -81,15 +82,19 @@ app.use(cors({
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const httpsOptions = {
-  key: fs.readFileSync(path.join(__dirname, "certs/192.168.1.6+1-key.pem")),
-  cert: fs.readFileSync(path.join(__dirname, "certs/192.168.1.6+1.pem")),
-};
+
 
 const isProduction = process.env.NODE_ENV === "production";
 if (isProduction) app.set("trust proxy", 1);
 
-app.use(express.json({ limit: '50mb'}))
+
+const options = {
+  key: fs.readFileSync("./certs/192.168.1.6+1-key.pem"),
+  cert: fs.readFileSync("./certs/192.168.1.6+1.pem"),
+};
+
+
+app.use(express.json({ limit: '50mb' }))
 app.use(sessionMiddleware);
 app.set("trust proxy", 1); // trust first proxy
 
@@ -100,7 +105,7 @@ app.set("trust proxy", 1); // trust first proxy
 
 
 app.get("/", (req, res) => {
-    res.send(`Server running in ${process.env.NODE_ENV} mode`)
+  res.send(`Server running in ${process.env.NODE_ENV} mode`)
 })
 
 appbaseddriver(app);
@@ -109,9 +114,19 @@ gfk(app);
 
 
 
-https.createServer(httpsOptions, app).listen(port, '0.0.0.0', () => {
-    console.log(`Server running on port ${port} in ${process.env.NODE_ENV}`)
-})
+if (!isProduction) {
+  // Local HTTPS only for dev
+
+  https.createServer(options, app).listen(port, () => {
+    console.log(`DEV HTTPS server running on https://192.168.1.6 on port ${port}`);
+  });
+
+} else {
+  // Production = HTTP ONLY
+  http.createServer(app).listen(port, () => {
+    console.log(`Production HTTP server running on ${port}`);
+  });
+}
 
 
 
