@@ -1,9 +1,21 @@
 import GFK from '../classes/gfk.js';
+import mysql from 'mysql2/promise'
 
 
 export default (app) => {
 
-   
+    const pool = mysql.createPool({
+        host: 'localhost',
+        user: 'mazen',
+        password: 'Iforgot1!',
+        database: 'GFK_TABLES',
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0
+
+    });
+
+
 
     app.get("/gfk/loadprojects", async (req, res) => {
         try {
@@ -81,14 +93,14 @@ export default (app) => {
             }
 
             // Load borings and field reports in parallel
-            const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope =[]] = await Promise.all([
+            const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = []] = await Promise.all([
                 gfk.loadBorings(projectid).catch(() => []),
                 gfk.loadFieldReports(projectid).catch(() => []),
                 gfk.loadCompactionCurves(projectid).catch(() => []),
                 gfk.loadSeismic(projectid).catch(() => []),
                 gfk.loadPTSlab(projectid).catch(() => []),
                 gfk.loadSlope(projectid).catch(() => [])
-               
+
             ]);
 
             // Return response with projectid attached
@@ -116,6 +128,79 @@ export default (app) => {
             });
         }
     });
+
+app.post('/:gfk/users/clientlogin', async (req, res) => {
+  try {
+    const gfk = new GFK();
+    const engineerInfo = { ...req.body };
+
+    const result = await gfk.clientLogin(engineerInfo);
+
+    // If login failed, return the message
+    if (!result.engineer) {
+      return res.status(400).json({ message: result.message || 'Login failed' });
+    }
+
+    // Save session
+    req.session.engineerId = result.engineer._id;
+    console.log("146", req.session.engineerId)
+    await req.session.save();
+
+    // Only load projects for a valid engineer
+    const projects = await gfk.loadProjects("gfk");
+
+    return res.status(200).json({
+      engineer: result.engineer,
+      projects,
+    });
+
+  } catch (err) {
+    console.error('Error during engineer login:', err);
+    return res.status(500).json({
+      message: `Error: could not log in engineer - ${err.message}`,
+    });
+  }
+});
+
+
+
+
+
+ app.get('/gfk/checkuser', async (req, res) => {
+  const engineerId = req.session.engineerId;
+  console.log("170", engineerId)
+  const gfk = new GFK();
+
+  try {
+    // No session found → user is not logged in
+    if (!engineerId) {
+      return res.status(401).json({ message: "No engineer is logged in" });
+    }
+
+    // Look up engineer
+    const engineer = await gfk.findEngineerByID(engineerId);
+
+    // Engineer does not exist
+    if (!engineer) {
+      return res.status(404).json({ message: "Engineer not found" });
+    }
+
+    // Now safe to load projects
+    const projects = await gfk.loadProjects("gfk");
+
+    return res.status(200).json({
+      engineer,
+      projects,
+    });
+
+  } catch (err) {
+    console.error("Error checking user:", err);
+    return res.status(500).json({
+      message: `Error checking engineer: ${err.message}`,
+    });
+  }
+});
+
 
 
 

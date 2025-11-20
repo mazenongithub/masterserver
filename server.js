@@ -8,6 +8,9 @@ import appbaseddriver from './routes/appbaseddriver.js';
 import gfk from './routes/gfk.js'
 import cors from 'cors';
 import sessionMiddleware from "./middleware/session.js";
+import path from "path";
+import { fileURLToPath } from "url";
+import https from 'https'
 
 // await testConnection()
 (async () => {
@@ -74,6 +77,15 @@ app.use(cors({
   credentials: true,
 }));
 
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const httpsOptions = {
+  key: fs.readFileSync(path.join(__dirname, "certs/192.168.1.6+1-key.pem")),
+  cert: fs.readFileSync(path.join(__dirname, "certs/192.168.1.6+1.pem")),
+};
+
 const isProduction = process.env.NODE_ENV === "production";
 if (isProduction) app.set("trust proxy", 1);
 
@@ -97,7 +109,7 @@ gfk(app);
 
 
 
-app.listen(port, '0.0.0.0', () => {
+https.createServer(httpsOptions, app).listen(port, '0.0.0.0', () => {
     console.log(`Server running on port ${port} in ${process.env.NODE_ENV}`)
 })
 

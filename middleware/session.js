@@ -19,10 +19,10 @@ const sessionMiddleware = session({
         ttl: 60 * 60 * 24 * 7, // 1 week session lifespan
     }),
     cookie: {
-        httpOnly: true,       // prevents client-side JS access
-        secure: isProduction,            // only HTTPS in production
-        sameSite: isProduction ? "none" : "lax", // allow cross-domain cookies
-        maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
+        httpOnly: true,
+        secure: true,       // MUST be true for sameSite:"none"
+        sameSite: "none",   // required for cross-site cookies
+        maxAge: 1000 * 60 * 60 * 24 * 7
     },
 });
 
