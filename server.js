@@ -90,7 +90,7 @@ if (isProduction) app.set("trust proxy", 1);
 
 const options = {
   key: fs.readFileSync("./certs/192.168.1.6+1-key.pem"),
-  cert: fs.readFileSync("./certs/192.168.1.6+1.pem"),
+  cert: fs.readFileSync("./certs/192.168.1.6+1-cert.pem"),
 };
 
 

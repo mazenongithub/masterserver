@@ -120,7 +120,7 @@ const compactionCurveSchema = ({
 
 const seismicSchema = new mongoose.Schema({
     projectid: String,
-    siteaccelteration: String,
+    siteacceleration: String,
     magnitude: String,
     points: [{
         pointid: String,
@@ -676,6 +676,7 @@ class GFK {
     return { message: `Error during client login: ${err.message}` };
   }
 }
+
 
 
 
