@@ -79,10 +79,7 @@ app.use(cors({
 }));
 
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-
+app.use('/uploads', express.static('uploads'));
 
 const isProduction = process.env.NODE_ENV === "production";
 if (isProduction) app.set("trust proxy", 1);

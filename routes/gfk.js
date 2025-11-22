@@ -1,5 +1,8 @@
 import GFK from '../classes/gfk.js';
 import mysql from 'mysql2/promise'
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 
 
 export default (app) => {
@@ -15,6 +18,93 @@ export default (app) => {
 
   });
 
+  const folders = [
+    'uploads/gfk/fieldimages',
+    'uploads/gfk/logdraft'
+  ];
+
+  folders.forEach(folder => {
+    if (!fs.existsSync(folder)) {
+      fs.mkdirSync(folder, { recursive: true });
+    }
+  });
+
+  // Dynamic storage function based on route
+  function createStorage(folder) {
+    return multer.diskStorage({
+      destination: function (req, file, cb) {
+        cb(null, folder);
+      },
+      filename: function (req, file, cb) {
+        const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        cb(null, unique + path.extname(file.originalname));
+      }
+    });
+  }
+
+  // Routes
+  const uploadFieldImage = multer({ storage: createStorage('uploads/gfk/fieldimages') });
+  const uploadLogDraft = multer({ storage: createStorage('uploads/gfk/logdraft') });
+
+  app.post('/gfk/upload/fieldimage', uploadFieldImage.single('image'), (req, res) => {
+    const url = `http://localhost:5000/uploads/gfk/fieldimages/${req.file.filename}`;
+    res.json({ url });
+  });
+
+ app.post('/gfk/uploadgraphiclog', uploadLogDraft.single('graphiclog'), async (req, res) => {
+    try {
+        const { projectid, boringid, sampleid } = req.body;
+        const fileUrl = `/uploads/gfk/logdraft/${req.file.filename}`;
+
+        const gfk = new GFK();
+        const borings = await gfk.loadBorings(projectid);
+
+        if (!borings) {
+            return res.status(404).json({ success: false, message: "Borings not found" });
+        }
+
+        // ✔ Find boring index safely
+        const boringIndex = borings.findIndex(b => b.boringid === boringid);
+        if (boringIndex === -1) {
+            return res.status(404).json({ success: false, message: "Boring not found" });
+        }
+
+        const boring = borings[boringIndex];
+
+        // ✔ Find sample index safely
+        const sampleIndex = boring.samples.findIndex(s => s.sampleid === sampleid);
+        if (sampleIndex === -1) {
+            return res.status(404).json({ success: false, message: "Sample not found" });
+        }
+
+        // ✔ Update the graphic log
+        borings[boringIndex].samples[sampleIndex].graphiclog = fileUrl;
+
+        // ✔ Save updated borings
+        const myBorings = {projectid, borings}
+        const updatedBorings = await gfk.saveBorings(myBorings);
+
+        const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+
+        return res.status(200).json({
+            success: true,
+            count: updatedBorings?.length || borings.length,
+            borings: updatedBorings || borings,
+            message: `Borings Saved Successfully - ${timestamp}`,
+            graphiclog: fileUrl,
+        });
+
+    } catch (err) {
+        console.error("❌ Error uploading graphic log:", err);
+
+        return res.status(500).json({
+            success: false,
+            message: "Error: Could not upload graphic log",
+            error: err.message,
+        });
+    }
+});
+;
 
 
   app.get("/gfk/loadprojects", async (req, res) => {
@@ -85,7 +175,7 @@ export default (app) => {
     try {
       const gfk = new GFK();
       const { projectid, borings } = req.body;
-      const myBorings = {projectid, borings}
+      const myBorings = { projectid, borings }
 
       const updatedBorings = await gfk.saveBorings(myBorings);
       const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
@@ -106,12 +196,12 @@ export default (app) => {
     }
   });
 
-    app.post('/:gfk/savefieldreports', async (req, res) => {
+  app.post('/:gfk/savefieldreports', async (req, res) => {
     try {
       const gfk = new GFK();
       const { projectid, fieldreports } = req.body;
       console.log(projectid, fieldreports)
-      const myFieldReports = {projectid, fieldreports}
+      const myFieldReports = { projectid, fieldreports }
 
       const updatedFieldReports = await gfk.saveFieldReports(myFieldReports);
       const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
@@ -119,7 +209,7 @@ export default (app) => {
       return res.status(200).json({
         message: `FieldReports Saved Successfully - ${timestamp}`,
         fieldreports: {
-          projectid:updatedFieldReports.projectid,
+          projectid: updatedFieldReports.projectid,
           fieldreports: updatedFieldReports.fieldreports
         }
       });
@@ -135,132 +225,132 @@ export default (app) => {
 
   app.post('/gfk/saveseismic', async (req, res) => {
     try {
-        const gfk = new GFK();
-        const { projectid, seismic } = req.body;
+      const gfk = new GFK();
+      const { projectid, seismic } = req.body;
 
-    
 
-        // Validate input
-        if (!projectid || !seismic || typeof seismic !== "object") {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid request: 'projectid' and 'seismic' (object) are required.",
-            });
-        }
 
-        const payload = { projectid, seismic };
-
-        // Save seismic data
-        const savedSeismic = await gfk.saveSeismic(payload);
-
-        // Local timestamp
-        const timestamp = new Date().toLocaleString("en-US", {
-            timeZone: "America/Los_Angeles",
+      // Validate input
+      if (!projectid || !seismic || typeof seismic !== "object") {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid request: 'projectid' and 'seismic' (object) are required.",
         });
+      }
 
-        return res.status(200).json({
-            success: true,
-            seismic: savedSeismic,
-            message: `Seismic Saved Successfully - ${timestamp}`,
-        });
+      const payload = { projectid, seismic };
+
+      // Save seismic data
+      const savedSeismic = await gfk.saveSeismic(payload);
+
+      // Local timestamp
+      const timestamp = new Date().toLocaleString("en-US", {
+        timeZone: "America/Los_Angeles",
+      });
+
+      return res.status(200).json({
+        success: true,
+        seismic: savedSeismic,
+        message: `Seismic Saved Successfully - ${timestamp}`,
+      });
 
     } catch (err) {
-        console.error("❌ Error saving seismic:", err);
+      console.error("❌ Error saving seismic:", err);
 
-        return res.status(500).json({
-            success: false,
-            message: "Error: Could not save seismic.",
-            error: err.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Error: Could not save seismic.",
+        error: err.message,
+      });
     }
-});
+  });
 
 
   app.post('/gfk/saveptslab', async (req, res) => {
     try {
-        const gfk = new GFK();
-        const { projectid, ptslab } = req.body;
+      const gfk = new GFK();
+      const { projectid, ptslab } = req.body;
 
 
-        // Validate input
-        if (!projectid || !ptslab || typeof ptslab !== "object") {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid request: 'projectid' and 'ptslab' (object) are required.",
-            });
-        }
-
-        const payload = { projectid, ptslab };
-       
-        // Save ptslab data
-        const savedPTSlab = await gfk.savePTSlab(ptslab);
-        
-
-        // Local timestamp
-        const timestamp = new Date().toLocaleString("en-US", {
-            timeZone: "America/Los_Angeles",
+      // Validate input
+      if (!projectid || !ptslab || typeof ptslab !== "object") {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid request: 'projectid' and 'ptslab' (object) are required.",
         });
+      }
 
-        return res.status(200).json({
-            success: true,
-            ptslab: savedPTSlab,
-            message: `PTSlab Saved Successfully - ${timestamp}`,
-        });
+      const payload = { projectid, ptslab };
+
+      // Save ptslab data
+      const savedPTSlab = await gfk.savePTSlab(ptslab);
+
+
+      // Local timestamp
+      const timestamp = new Date().toLocaleString("en-US", {
+        timeZone: "America/Los_Angeles",
+      });
+
+      return res.status(200).json({
+        success: true,
+        ptslab: savedPTSlab,
+        message: `PTSlab Saved Successfully - ${timestamp}`,
+      });
 
     } catch (err) {
-        console.error("❌ Error saving ptslab:", err);
+      console.error("❌ Error saving ptslab:", err);
 
-        return res.status(500).json({
-            success: false,
-            message: "Error: Could not save ptslab.",
-            error: err.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Error: Could not save ptslab.",
+        error: err.message,
+      });
     }
-});
+  });
 
 
   app.post('/gfk/saveslope', async (req, res) => {
     try {
-        const gfk = new GFK();
-        const { projectid, slope } = req.body;
+      const gfk = new GFK();
+      const { projectid, slope } = req.body;
 
-        console.log(projectid, slope);
+      console.log(projectid, slope);
 
-        // Validate input
-        if (!projectid || !slope || typeof slope !== "object") {
-            return res.status(400).json({
-                success: false,
-                message: "Invalid request: 'projectid' and 'slope' (object) are required.",
-            });
-        }
-
-       
-
-        // Save slope data
-        const savedSlope = await gfk.saveSlope(slope);
-        console.log(savedSlope)
-
-        // Local timestamp
-        const timestamp = new Date().toLocaleString("en-US", {
-            timeZone: "America/Los_Angeles",
+      // Validate input
+      if (!projectid || !slope || typeof slope !== "object") {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid request: 'projectid' and 'slope' (object) are required.",
         });
+      }
 
-        return res.status(200).json({
-            success: true,
-            slope: savedSlope,
-            message: `Slope Saved Successfully - ${timestamp}`,
-        });
+
+
+      // Save slope data
+      const savedSlope = await gfk.saveSlope(slope);
+      console.log(savedSlope)
+
+      // Local timestamp
+      const timestamp = new Date().toLocaleString("en-US", {
+        timeZone: "America/Los_Angeles",
+      });
+
+      return res.status(200).json({
+        success: true,
+        slope: savedSlope,
+        message: `Slope Saved Successfully - ${timestamp}`,
+      });
 
     } catch (err) {
-        console.error("❌ Error saving slope:", err);
+      console.error("❌ Error saving slope:", err);
 
-        return res.status(500).json({
-            success: false,
-            message: "Error: Could not save slope.",
-            error: err.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Error: Could not save slope.",
+        error: err.message,
+      });
     }
-});
+  });
 
 
 
