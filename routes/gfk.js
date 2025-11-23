@@ -3,6 +3,7 @@ import mysql from 'mysql2/promise'
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import {checkSessionGFK} from '../middleware/checkgfk.js'
 
 
 export default (app) => {
@@ -46,7 +47,7 @@ export default (app) => {
   const uploadFieldImage = multer({ storage: createStorage('uploads/gfk/fieldimages') });
   const uploadLogDraft = multer({ storage: createStorage('uploads/gfk/logdraft') });
 
-app.post("/gfk/upload/fieldimage", uploadFieldImage.single("fieldimage"), async (req, res) => {
+app.post("/gfk/upload/fieldimage", checkSessionGFK, uploadFieldImage.single("fieldimage"), async (req, res) => {
        
     try {
             const gfk = new GFK();
@@ -132,7 +133,7 @@ app.post("/gfk/upload/fieldimage", uploadFieldImage.single("fieldimage"), async 
 );
 
 
- app.post('/gfk/uploadgraphiclog', uploadLogDraft.single('graphiclog'), async (req, res) => {
+ app.post('/gfk/uploadgraphiclog', checkSessionGFK, uploadLogDraft.single('graphiclog'), async (req, res) => {
     try {
         const { projectid, boringid, sampleid } = req.body;
         const fileUrl = `/uploads/gfk/logdraft/${req.file.filename}`;
@@ -188,7 +189,7 @@ app.post("/gfk/upload/fieldimage", uploadFieldImage.single("fieldimage"), async 
 ;
 
 
-  app.get("/gfk/loadprojects", async (req, res) => {
+  app.get("/gfk/loadprojects", checkSessionGFK, async (req, res) => {
     try {
       const gfk = new GFK();
       const companyid = 'gfk'
@@ -222,7 +223,7 @@ app.post("/gfk/upload/fieldimage", uploadFieldImage.single("fieldimage"), async 
     }
   });
 
-  app.post("/gfk/saveprojects", async (req, res) => {
+  app.post("/gfk/saveprojects", checkSessionGFK, async (req, res) => {
     try {
       const gfk = new GFK();
       const { companyid, projects } = req.body;
@@ -252,7 +253,7 @@ app.post("/gfk/upload/fieldimage", uploadFieldImage.single("fieldimage"), async 
   });
 
 
-  app.post('/:gfk/saveborings', async (req, res) => {
+  app.post('/:gfk/saveborings', checkSessionGFK, async (req, res) => {
     try {
       const gfk = new GFK();
       const { projectid, borings } = req.body;
@@ -277,7 +278,7 @@ app.post("/gfk/upload/fieldimage", uploadFieldImage.single("fieldimage"), async 
     }
   });
 
-  app.post('/:gfk/savefieldreports', async (req, res) => {
+  app.post('/:gfk/savefieldreports', checkSessionGFK, async (req, res) => {
     try {
       const gfk = new GFK();
       const { projectid, fieldreports } = req.body;
@@ -304,7 +305,7 @@ app.post("/gfk/upload/fieldimage", uploadFieldImage.single("fieldimage"), async 
   });
 
 
-  app.post('/gfk/saveseismic', async (req, res) => {
+  app.post('/gfk/saveseismic', checkSessionGFK, async (req, res) => {
     try {
       const gfk = new GFK();
       const { projectid, seismic } = req.body;
@@ -347,7 +348,7 @@ app.post("/gfk/upload/fieldimage", uploadFieldImage.single("fieldimage"), async 
   });
 
 
-  app.post('/gfk/saveptslab', async (req, res) => {
+  app.post('/gfk/saveptslab', checkSessionGFK, async (req, res) => {
     try {
       const gfk = new GFK();
       const { projectid, ptslab } = req.body;
@@ -390,7 +391,7 @@ app.post("/gfk/upload/fieldimage", uploadFieldImage.single("fieldimage"), async 
   });
 
 
-  app.post('/gfk/saveslope', async (req, res) => {
+  app.post('/gfk/saveslope', checkSessionGFK, async (req, res) => {
     try {
       const gfk = new GFK();
       const { projectid, slope } = req.body;
@@ -436,7 +437,7 @@ app.post("/gfk/upload/fieldimage", uploadFieldImage.single("fieldimage"), async 
 
 
 
-  app.get("/gfk/:projectid/loadproject", async (req, res) => {
+  app.get("/gfk/:projectid/loadproject", checkSessionGFK, async (req, res) => {
     try {
       const { projectid } = req.params;
       const gfk = new GFK();
@@ -574,10 +575,6 @@ app.post("/gfk/upload/fieldimage", uploadFieldImage.single("fieldimage"), async 
       });
     }
   });
-
-
-
-
 
 
 
