@@ -356,25 +356,39 @@ class GFK {
     }
 
 
-    async saveCompactionCurves(compactionCurves) {
-        try {
-            const filter = { projectid: compactionCurves.projectid };
+  async saveCompactionCurves(myCompactionCurves) {
+    try {
+        const filter = { projectid: myCompactionCurves.projectid };
 
-            const options = {
-                new: true,       // ✅ return the updated document
-                upsert: true,    // ✅ create new if not found
-                strict: false,   // ✅ allow flexible schema fields
-            };
+        // Always ensure compactioncurves is an array
+        const curvesArray = Array.isArray(myCompactionCurves.compactioncurves)
+            ? myCompactionCurves.compactioncurves
+            : [];
 
-            const updatedCurves = await CompactionCurves.findOneAndUpdate(filter, compactionCurves, options);
+        const update = {
+            $set: { compactioncurves: curvesArray }
+        };
 
-            return updatedCurves;
+        const options = {
+            new: true,     // return updated doc
+            upsert: true,  // create if not exists
+        };
 
-        } catch (err) {
-            console.error('Error saving compaction curves:', err);
-            return { message: `Error: Could not save compaction curves - ${err.message}` };
-        }
+        const updatedDoc = await CompactionCurves.findOneAndUpdate(
+            filter,
+            update,
+            options
+        );
+
+        // Return ONLY the curves array for the frontend
+        return updatedDoc.compactioncurves || [];
+
+    } catch (err) {
+        console.error('Error saving compaction curves:', err);
+        return { message: `Error: Could not save compaction curves - ${err.message}` };
     }
+}
+
 
     async loadCompactionCurves(projectid) {
         try {

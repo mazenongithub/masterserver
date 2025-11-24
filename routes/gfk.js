@@ -3,7 +3,7 @@ import mysql from 'mysql2/promise'
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import {checkSessionGFK} from '../middleware/checkgfk.js'
+import { checkSessionGFK } from '../middleware/checkgfk.js'
 
 
 export default (app) => {
@@ -47,146 +47,146 @@ export default (app) => {
   const uploadFieldImage = multer({ storage: createStorage('uploads/gfk/fieldimages') });
   const uploadLogDraft = multer({ storage: createStorage('uploads/gfk/logdraft') });
 
-app.post("/gfk/upload/fieldimage", checkSessionGFK, uploadFieldImage.single("fieldimage"), async (req, res) => {
-       
+  app.post("/gfk/upload/fieldimage", checkSessionGFK, uploadFieldImage.single("fieldimage"), async (req, res) => {
+
     try {
-            const gfk = new GFK();
+      const gfk = new GFK();
 
-            const { projectid, fieldid, imageid } = req.body;
-            let {fieldreports} = req.body
-            fieldreports = JSON.parse(fieldreports);
-           
-
-            if (!projectid || !fieldid || !imageid || !fieldreports) {
-                return res.status(400).json({
-                    success: false,
-                    message: "Missing required fields: projectid, fieldid, imageid, fieldreports",
-                });
-            }
-
-            if (!req.file) {
-                return res.status(400).json({
-                    success: false,
-                    message: "No file uploaded",
-                });
-            }
-
-            const fileUrl = `/uploads/gfk/fieldimages/${req.file.filename}`;
-
-            // Find field report
-            const reportIndex = fieldreports.findIndex(
-                (r) => r.fieldid === fieldid
-            );
-
-            if (reportIndex === -1) {
-                return res.status(404).json({
-                    success: false,
-                    message: "Field report not found",
-                });
-            }
-
-            const report = fieldreports[reportIndex];
-
-            // Ensure images array exists
-            if (!Array.isArray(report.images)) {
-                report.images = [];
-            }
-
-            const imageIndex = report.images.findIndex(
-                (img) => img.imageid === imageid
-            );
-
-            if (imageIndex === -1) {
-                return res.status(404).json({
-                    success: false,
-                    message: "Image record not found",
-                });
-            }
-
-            // Update only the image URL
-            report.images[imageIndex].image = fileUrl;
-
-            const timestamp = new Date().toLocaleString("en-US", {
-                timeZone: "America/Los_Angeles",
-            });
-
-            const payload = { projectid, fieldreports };
-
-            const savedReports = await gfk.saveFieldReports(payload);
-
-            return res.status(200).json({
-                success: true,
-                fieldreports: savedReports,
-                message: `Field Report Image Saved Successfully - ${timestamp}`,
-                url: fileUrl,
-            });
-        } catch (err) {
-            console.error("❌ Error uploading field image:", err);
-
-            return res.status(500).json({
-                success: false,
-                message: "Error: Could not upload field image",
-                error: err.message,
-            });
-        }
-    }
-);
+      const { projectid, fieldid, imageid } = req.body;
+      let { fieldreports } = req.body
+      fieldreports = JSON.parse(fieldreports);
 
 
- app.post('/gfk/uploadgraphiclog', checkSessionGFK, uploadLogDraft.single('graphiclog'), async (req, res) => {
-    try {
-        const { projectid, boringid, sampleid } = req.body;
-        const fileUrl = `/uploads/gfk/logdraft/${req.file.filename}`;
-
-        const gfk = new GFK();
-        const borings = await gfk.loadBorings(projectid);
-
-        if (!borings) {
-            return res.status(404).json({ success: false, message: "Borings not found" });
-        }
-
-        // ✔ Find boring index safely
-        const boringIndex = borings.findIndex(b => b.boringid === boringid);
-        if (boringIndex === -1) {
-            return res.status(404).json({ success: false, message: "Boring not found" });
-        }
-
-        const boring = borings[boringIndex];
-
-        // ✔ Find sample index safely
-        const sampleIndex = boring.samples.findIndex(s => s.sampleid === sampleid);
-        if (sampleIndex === -1) {
-            return res.status(404).json({ success: false, message: "Sample not found" });
-        }
-
-        // ✔ Update the graphic log
-        borings[boringIndex].samples[sampleIndex].graphiclog = fileUrl;
-
-        // ✔ Save updated borings
-        const myBorings = {projectid, borings}
-        const updatedBorings = await gfk.saveBorings(myBorings);
-
-        const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
-
-        return res.status(200).json({
-            success: true,
-            count: updatedBorings?.length || borings.length,
-            borings: updatedBorings || borings,
-            message: `Borings Saved Successfully - ${timestamp}`,
-            graphiclog: fileUrl,
+      if (!projectid || !fieldid || !imageid || !fieldreports) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing required fields: projectid, fieldid, imageid, fieldreports",
         });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: "No file uploaded",
+        });
+      }
+
+      const fileUrl = `/uploads/gfk/fieldimages/${req.file.filename}`;
+
+      // Find field report
+      const reportIndex = fieldreports.findIndex(
+        (r) => r.fieldid === fieldid
+      );
+
+      if (reportIndex === -1) {
+        return res.status(404).json({
+          success: false,
+          message: "Field report not found",
+        });
+      }
+
+      const report = fieldreports[reportIndex];
+
+      // Ensure images array exists
+      if (!Array.isArray(report.images)) {
+        report.images = [];
+      }
+
+      const imageIndex = report.images.findIndex(
+        (img) => img.imageid === imageid
+      );
+
+      if (imageIndex === -1) {
+        return res.status(404).json({
+          success: false,
+          message: "Image record not found",
+        });
+      }
+
+      // Update only the image URL
+      report.images[imageIndex].image = fileUrl;
+
+      const timestamp = new Date().toLocaleString("en-US", {
+        timeZone: "America/Los_Angeles",
+      });
+
+      const payload = { projectid, fieldreports };
+
+      const savedReports = await gfk.saveFieldReports(payload);
+
+      return res.status(200).json({
+        success: true,
+        fieldreports: savedReports,
+        message: `Field Report Image Saved Successfully - ${timestamp}`,
+        url: fileUrl,
+      });
+    } catch (err) {
+      console.error("❌ Error uploading field image:", err);
+
+      return res.status(500).json({
+        success: false,
+        message: "Error: Could not upload field image",
+        error: err.message,
+      });
+    }
+  }
+  );
+
+
+  app.post('/gfk/uploadgraphiclog', checkSessionGFK, uploadLogDraft.single('graphiclog'), async (req, res) => {
+    try {
+      const { projectid, boringid, sampleid } = req.body;
+      const fileUrl = `/uploads/gfk/logdraft/${req.file.filename}`;
+
+      const gfk = new GFK();
+      const borings = await gfk.loadBorings(projectid);
+
+      if (!borings) {
+        return res.status(404).json({ success: false, message: "Borings not found" });
+      }
+
+      // ✔ Find boring index safely
+      const boringIndex = borings.findIndex(b => b.boringid === boringid);
+      if (boringIndex === -1) {
+        return res.status(404).json({ success: false, message: "Boring not found" });
+      }
+
+      const boring = borings[boringIndex];
+
+      // ✔ Find sample index safely
+      const sampleIndex = boring.samples.findIndex(s => s.sampleid === sampleid);
+      if (sampleIndex === -1) {
+        return res.status(404).json({ success: false, message: "Sample not found" });
+      }
+
+      // ✔ Update the graphic log
+      borings[boringIndex].samples[sampleIndex].graphiclog = fileUrl;
+
+      // ✔ Save updated borings
+      const myBorings = { projectid, borings }
+      const updatedBorings = await gfk.saveBorings(myBorings);
+
+      const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+
+      return res.status(200).json({
+        success: true,
+        count: updatedBorings?.length || borings.length,
+        borings: updatedBorings || borings,
+        message: `Borings Saved Successfully - ${timestamp}`,
+        graphiclog: fileUrl,
+      });
 
     } catch (err) {
-        console.error("❌ Error uploading graphic log:", err);
+      console.error("❌ Error uploading graphic log:", err);
 
-        return res.status(500).json({
-            success: false,
-            message: "Error: Could not upload graphic log",
-            error: err.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Error: Could not upload graphic log",
+        error: err.message,
+      });
     }
-});
-;
+  });
+  ;
 
 
   app.get("/gfk/loadprojects", checkSessionGFK, async (req, res) => {
@@ -434,6 +434,44 @@ app.post("/gfk/upload/fieldimage", checkSessionGFK, uploadFieldImage.single("fie
     }
   });
 
+app.post('/:gfk/savecompactioncurves', checkSessionGFK, async (req, res) => {
+  try {
+    const gfk = new GFK();
+    const { projectid, compactioncurves } = req.body;
+
+    const myCompactionCurves = { projectid, compactioncurves };
+
+    const updatedCompactionCurves = await gfk.saveCompactionCurves(myCompactionCurves);
+
+    // Always ensure it's an array
+    const cleanedCurves = Array.isArray(updatedCompactionCurves)
+      ? updatedCompactionCurves
+      : [];
+
+    const timestamp = new Date().toLocaleString("en-US", {
+      timeZone: "America/Los_Angeles"
+    });
+
+    return res.status(200).json({
+      message: `Compaction Curves Saved Successfully - ${timestamp}`,
+
+      // Frontend expects this shape:
+      compactioncurves: {
+        projectid,
+        compactioncurves: cleanedCurves
+      }
+    });
+
+  } catch (err) {
+    console.error("Error saving compactioncurves:", err);
+
+    return res.status(500).json({
+      message: `Error saving compactioncurves: ${err.message}`
+    });
+  }
+});
+
+
 
 
 
@@ -575,6 +613,40 @@ app.post("/gfk/upload/fieldimage", checkSessionGFK, uploadFieldImage.single("fie
       });
     }
   });
+
+app.get("/gfk/loadzonecharts", async (req, res) => {
+  try {
+    const queries = {
+      zone_1: "SELECT PI, LL, Gamma FROM ZoneOne",
+      zone_2: "SELECT PI, LL, Gamma FROM ZoneTwo",
+      zone_3: "SELECT PI, LL, Gamma FROM ZoneThree",
+      zone_4: "SELECT PI, LL, Gamma FROM ZoneFour",
+      zone_5: "SELECT PI, LL, Gamma FROM ZoneFive",
+      zone_6: "SELECT PI, LL, Gamma FROM ZoneSix"
+    };
+
+    // Run all queries in parallel
+    const results = await Promise.all(
+      Object.values(queries).map(q => pool.query(q))
+    );
+
+    // Map results back to keys
+    const zonecharts = Object.keys(queries).reduce((acc, key, index) => {
+      acc[key] = results[index][0]; // [rows] from pool.query
+      return acc;
+    }, {});
+
+    return res.json({ zonecharts });
+
+  } catch (err) {
+    console.error("Error loading zone charts:", err);
+    return res.status(500).json({ error: "Could not load charts." });
+  }
+});
+
+
+
+
 
 
 
