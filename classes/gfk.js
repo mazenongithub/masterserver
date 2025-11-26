@@ -209,7 +209,7 @@ const EngineerSchema = new mongoose.Schema({
     phonenumber: String
 })
 
-const clientSchema = new mongoose.Schema({
+const gfkSchema = new mongoose.Schema({
     company:String,
     clients:[{    
     clientid:String,
@@ -237,7 +237,7 @@ const SeismicReport = mongoose.model("seismicreports", seismicSchema)
 const PTSlabs = mongoose.model("ptslabs", PTSchema)
 const Slopes = mongoose.model("slopes", slopeSchema)
 const MyEngineer = mongoose.model("engineers", EngineerSchema)
-const Clients = mongoose.model("clients", clientSchema)
+const GFKCompany = mongoose.model("GFKCompany", gfkSchema, "gfkcompany")
 
 
 class GFK {
@@ -367,7 +367,7 @@ class GFK {
             $set: { clients: myClients.clients }
         };
 
-        const updated = await Clients.findOneAndUpdate(filter, update, options);
+        const updated = await GFKCompany.findOneAndUpdate(filter, update, options);
 
         return updated.clients;
 
@@ -381,7 +381,7 @@ class GFK {
  async findClients() {
     try {
         // Find a single company document
-        const companyDoc = await Clients.findOne({ company: 'gfk' });
+        const companyDoc = await GFKCompany.findOne({ company: 'gfk' });
 
         // If no document found or no clients array, return empty array
         if (!companyDoc || !Array.isArray(companyDoc.clients)) {
