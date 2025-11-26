@@ -434,42 +434,86 @@ export default (app) => {
     }
   });
 
-app.post('/:gfk/savecompactioncurves', checkSessionGFK, async (req, res) => {
+  app.post('/:gfk/savecompactioncurves', checkSessionGFK, async (req, res) => {
+    try {
+      const gfk = new GFK();
+      const { projectid, compactioncurves } = req.body;
+
+      const myCompactionCurves = { projectid, compactioncurves };
+
+      const updatedCompactionCurves = await gfk.saveCompactionCurves(myCompactionCurves);
+
+      // Always ensure it's an array
+      const cleanedCurves = Array.isArray(updatedCompactionCurves)
+        ? updatedCompactionCurves
+        : [];
+
+      const timestamp = new Date().toLocaleString("en-US", {
+        timeZone: "America/Los_Angeles"
+      });
+
+      return res.status(200).json({
+        message: `Compaction Curves Saved Successfully - ${timestamp}`,
+
+        // Frontend expects this shape:
+        compactioncurves: {
+          projectid,
+          compactioncurves: cleanedCurves
+        }
+      });
+
+    } catch (err) {
+      console.error("Error saving compactioncurves:", err);
+
+      return res.status(500).json({
+        message: `Error saving compactioncurves: ${err.message}`
+      });
+    }
+  });
+
+app.post('/:company/saveclients', checkSessionGFK, async (req, res) => {
   try {
     const gfk = new GFK();
-    const { projectid, compactioncurves } = req.body;
+    const company = req.params.company?.trim();
+    const clients = req.body?.clients;
 
-    const myCompactionCurves = { projectid, compactioncurves };
+    if (!company) {
+      return res.status(400).json({ message: "Company is required in URL." });
+    }
 
-    const updatedCompactionCurves = await gfk.saveCompactionCurves(myCompactionCurves);
+    if (!Array.isArray(clients)) {
+      return res.status(400).json({ message: "Clients must be an array." });
+    }
 
-    // Always ensure it's an array
-    const cleanedCurves = Array.isArray(updatedCompactionCurves)
-      ? updatedCompactionCurves
-      : [];
+    const updatedClients = await gfk.saveClients({ company, clients });
+
+    // safety check
+    if (!updatedClients) {
+      return res.status(500).json({
+        message: "Error: Clients could not be saved."
+      });
+    }
 
     const timestamp = new Date().toLocaleString("en-US", {
       timeZone: "America/Los_Angeles"
     });
 
     return res.status(200).json({
-      message: `Compaction Curves Saved Successfully - ${timestamp}`,
-
-      // Frontend expects this shape:
-      compactioncurves: {
-        projectid,
-        compactioncurves: cleanedCurves
-      }
+      message: `Clients Saved Successfully - ${timestamp}`,
+      company,
+      clients: updatedClients
     });
 
   } catch (err) {
-    console.error("Error saving compactioncurves:", err);
+    console.error("Error saving clients:", err);
 
     return res.status(500).json({
-      message: `Error saving compactioncurves: ${err.message}`
+      message: `Error saving clients: ${err.message}`
     });
   }
 });
+
+
 
 
 
@@ -541,11 +585,17 @@ app.post('/:gfk/savecompactioncurves', checkSessionGFK, async (req, res) => {
       await req.session.save();
 
       // Only load projects for a valid engineer
-      const projects = await gfk.loadProjects("gfk");
+       const [clients, projects] = await Promise.all([
+        gfk.findClients(),
+        gfk.loadProjects("gfk")
+      ])
 
       return res.status(200).json({
         engineer: result.engineer,
         projects,
+        gfk:{
+          clients
+        }
       });
 
     } catch (err) {
@@ -598,12 +648,17 @@ app.post('/:gfk/savecompactioncurves', checkSessionGFK, async (req, res) => {
         return res.status(404).json({ message: "Engineer not found" });
       }
 
-      // Now safe to load projects
-      const projects = await gfk.loadProjects("gfk");
+      const [clients, projects] = await Promise.all([
+        gfk.findClients(),
+        gfk.loadProjects("gfk")
+      ])
 
       return res.status(200).json({
         engineer,
         projects,
+        gfk:{
+          clients
+        }
       });
 
     } catch (err) {
@@ -614,35 +669,35 @@ app.post('/:gfk/savecompactioncurves', checkSessionGFK, async (req, res) => {
     }
   });
 
-app.get("/gfk/loadzonecharts", async (req, res) => {
-  try {
-    const queries = {
-      zone_1: "SELECT PI, LL, Gamma FROM ZoneOne",
-      zone_2: "SELECT PI, LL, Gamma FROM ZoneTwo",
-      zone_3: "SELECT PI, LL, Gamma FROM ZoneThree",
-      zone_4: "SELECT PI, LL, Gamma FROM ZoneFour",
-      zone_5: "SELECT PI, LL, Gamma FROM ZoneFive",
-      zone_6: "SELECT PI, LL, Gamma FROM ZoneSix"
-    };
+  app.get("/gfk/loadzonecharts", async (req, res) => {
+    try {
+      const queries = {
+        zone_1: "SELECT PI, LL, Gamma FROM ZoneOne",
+        zone_2: "SELECT PI, LL, Gamma FROM ZoneTwo",
+        zone_3: "SELECT PI, LL, Gamma FROM ZoneThree",
+        zone_4: "SELECT PI, LL, Gamma FROM ZoneFour",
+        zone_5: "SELECT PI, LL, Gamma FROM ZoneFive",
+        zone_6: "SELECT PI, LL, Gamma FROM ZoneSix"
+      };
 
-    // Run all queries in parallel
-    const results = await Promise.all(
-      Object.values(queries).map(q => pool.query(q))
-    );
+      // Run all queries in parallel
+      const results = await Promise.all(
+        Object.values(queries).map(q => pool.query(q))
+      );
 
-    // Map results back to keys
-    const zonecharts = Object.keys(queries).reduce((acc, key, index) => {
-      acc[key] = results[index][0]; // [rows] from pool.query
-      return acc;
-    }, {});
+      // Map results back to keys
+      const zonecharts = Object.keys(queries).reduce((acc, key, index) => {
+        acc[key] = results[index][0]; // [rows] from pool.query
+        return acc;
+      }, {});
 
-    return res.json({ zonecharts });
+      return res.json({ zonecharts });
 
-  } catch (err) {
-    console.error("Error loading zone charts:", err);
-    return res.status(500).json({ error: "Could not load charts." });
-  }
-});
+    } catch (err) {
+      console.error("Error loading zone charts:", err);
+      return res.status(500).json({ error: "Could not load charts." });
+    }
+  });
 
 
 

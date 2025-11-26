@@ -209,6 +209,25 @@ const EngineerSchema = new mongoose.Schema({
     phonenumber: String
 })
 
+const clientSchema = new mongoose.Schema({
+    company:String,
+    clients:[{    
+    clientid:String,
+    prefix: String,
+    firstname:String,
+    lastname:String,
+    company:String,
+    address:String,
+    city:String,
+    contactstate:String,
+    zipcode:String,
+    emailaddress:String,
+    phonenumber:String
+
+    }]
+
+})
+
 
 const MyProjects = mongoose.model("gfkprojects", ProjectSchema);
 const MyBorings = mongoose.model("myborings", BoringSchema);
@@ -218,6 +237,7 @@ const SeismicReport = mongoose.model("seismicreports", seismicSchema)
 const PTSlabs = mongoose.model("ptslabs", PTSchema)
 const Slopes = mongoose.model("slopes", slopeSchema)
 const MyEngineer = mongoose.model("engineers", EngineerSchema)
+const Clients = mongoose.model("clients", clientSchema)
 
 
 class GFK {
@@ -332,6 +352,53 @@ class GFK {
             return [];
         }
     }
+
+ async saveClients(myClients) {
+    try {
+        const filter = { company: myClients.company };
+
+        const options = {
+            new: true,       // return updated document
+            upsert: true,    // create if not found
+        };
+
+        // Use $set to avoid replacing the entire document accidentally
+        const update = { 
+            $set: { clients: myClients.clients }
+        };
+
+        const updated = await Clients.findOneAndUpdate(filter, update, options);
+
+        return updated.clients;
+
+    } catch (err) {
+        console.error('Error saving clients:', err);
+        return { message: `Error: Could not save clients - ${err.message}` };
+    }
+}
+
+
+ async findClients() {
+    try {
+        // Find a single company document
+        const companyDoc = await Clients.findOne({ company: 'gfk' });
+
+        // If no document found or no clients array, return empty array
+        if (!companyDoc || !Array.isArray(companyDoc.clients)) {
+            return [];
+        }
+
+        return companyDoc.clients;
+
+    } catch (err) {
+        console.error('Error: Could not find clients', err);
+        return { 
+            message: `Error: Could not find clients - ${err.message}` 
+        };
+    }
+}
+
+
 
 
 
