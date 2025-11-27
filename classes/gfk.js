@@ -210,23 +210,62 @@ const EngineerSchema = new mongoose.Schema({
 })
 
 const gfkSchema = new mongoose.Schema({
-    company:String,
-    clients:[{    
-    clientid:String,
-    prefix: String,
-    firstname:String,
-    lastname:String,
-    company:String,
-    address:String,
-    city:String,
-    contactstate:String,
-    zipcode:String,
-    emailaddress:String,
-    phonenumber:String
+    company: String,
+    clients: [{
+        clientid: String,
+        prefix: String,
+        firstname: String,
+        lastname: String,
+        company: String,
+        address: String,
+        city: String,
+        contactstate: String,
+        zipcode: String,
+        emailaddress: String,
+        phonenumber: String
 
     }]
 
 })
+
+const TimesheetSchema = new mongoose.Schema({
+  projectid: {
+    type: String,
+    required: true,
+    index: true
+  },
+
+  labor: [
+    {
+      engineerid: { type: String, required: true },
+      laborid: { type: String, required: true, unique: true },
+      timein: { type: Date, required: true },   // stored as UTC
+      timeout: { type: Date, required: true },  // stored as UTC
+      laborrate: { type: Number, required: true },
+      description: String
+    }
+  ],
+
+  costs: [
+    {
+      costid: { type: String, required: true, unique: true },
+      datein: { type: Date, required: true },  // stored as UTC
+      unitcost: { type: Number, required: true },
+      unit: { type: String, default: "each" },
+      quantity: { type: Number, default: 1 },
+      description: String
+    }
+  ],
+
+  invoices: [
+    {
+      invoiceid: { type: String, required: true },
+      dateinvoice: { type: Date, required: true }, // stored as UTC
+      labor: [{ type: String }], // references labor.laborid
+      costs: [{ type: String }]  // references costs.costid
+    }
+  ]
+});
 
 
 const MyProjects = mongoose.model("gfkprojects", ProjectSchema);
@@ -238,6 +277,7 @@ const PTSlabs = mongoose.model("ptslabs", PTSchema)
 const Slopes = mongoose.model("slopes", slopeSchema)
 const MyEngineer = mongoose.model("engineers", EngineerSchema)
 const GFKCompany = mongoose.model("GFKCompany", gfkSchema, "gfkcompany")
+const TimeSheets = mongoose.model("timesheets", TimesheetSchema)
 
 
 class GFK {
@@ -353,50 +393,50 @@ class GFK {
         }
     }
 
- async saveClients(myClients) {
-    try {
-        const filter = { company: myClients.company };
+    async saveClients(myClients) {
+        try {
+            const filter = { company: myClients.company };
 
-        const options = {
-            new: true,       // return updated document
-            upsert: true,    // create if not found
-        };
+            const options = {
+                new: true,       // return updated document
+                upsert: true,    // create if not found
+            };
 
-        // Use $set to avoid replacing the entire document accidentally
-        const update = { 
-            $set: { clients: myClients.clients }
-        };
+            // Use $set to avoid replacing the entire document accidentally
+            const update = {
+                $set: { clients: myClients.clients }
+            };
 
-        const updated = await GFKCompany.findOneAndUpdate(filter, update, options);
+            const updated = await GFKCompany.findOneAndUpdate(filter, update, options);
 
-        return updated.clients;
+            return updated.clients;
 
-    } catch (err) {
-        console.error('Error saving clients:', err);
-        return { message: `Error: Could not save clients - ${err.message}` };
-    }
-}
-
-
- async findClients() {
-    try {
-        // Find a single company document
-        const companyDoc = await GFKCompany.findOne({ company: 'gfk' });
-
-        // If no document found or no clients array, return empty array
-        if (!companyDoc || !Array.isArray(companyDoc.clients)) {
-            return [];
+        } catch (err) {
+            console.error('Error saving clients:', err);
+            return { message: `Error: Could not save clients - ${err.message}` };
         }
-
-        return companyDoc.clients;
-
-    } catch (err) {
-        console.error('Error: Could not find clients', err);
-        return { 
-            message: `Error: Could not find clients - ${err.message}` 
-        };
     }
-}
+
+
+    async findClients() {
+        try {
+            // Find a single company document
+            const companyDoc = await GFKCompany.findOne({ company: 'gfk' });
+
+            // If no document found or no clients array, return empty array
+            if (!companyDoc || !Array.isArray(companyDoc.clients)) {
+                return [];
+            }
+
+            return companyDoc.clients;
+
+        } catch (err) {
+            console.error('Error: Could not find clients', err);
+            return {
+                message: `Error: Could not find clients - ${err.message}`
+            };
+        }
+    }
 
 
 
@@ -423,38 +463,38 @@ class GFK {
     }
 
 
-  async saveCompactionCurves(myCompactionCurves) {
-    try {
-        const filter = { projectid: myCompactionCurves.projectid };
+    async saveCompactionCurves(myCompactionCurves) {
+        try {
+            const filter = { projectid: myCompactionCurves.projectid };
 
-        // Always ensure compactioncurves is an array
-        const curvesArray = Array.isArray(myCompactionCurves.compactioncurves)
-            ? myCompactionCurves.compactioncurves
-            : [];
+            // Always ensure compactioncurves is an array
+            const curvesArray = Array.isArray(myCompactionCurves.compactioncurves)
+                ? myCompactionCurves.compactioncurves
+                : [];
 
-        const update = {
-            $set: { compactioncurves: curvesArray }
-        };
+            const update = {
+                $set: { compactioncurves: curvesArray }
+            };
 
-        const options = {
-            new: true,     // return updated doc
-            upsert: true,  // create if not exists
-        };
+            const options = {
+                new: true,     // return updated doc
+                upsert: true,  // create if not exists
+            };
 
-        const updatedDoc = await CompactionCurves.findOneAndUpdate(
-            filter,
-            update,
-            options
-        );
+            const updatedDoc = await CompactionCurves.findOneAndUpdate(
+                filter,
+                update,
+                options
+            );
 
-        // Return ONLY the curves array for the frontend
-        return updatedDoc.compactioncurves || [];
+            // Return ONLY the curves array for the frontend
+            return updatedDoc.compactioncurves || [];
 
-    } catch (err) {
-        console.error('Error saving compaction curves:', err);
-        return { message: `Error: Could not save compaction curves - ${err.message}` };
+        } catch (err) {
+            console.error('Error saving compaction curves:', err);
+            return { message: `Error: Could not save compaction curves - ${err.message}` };
+        }
     }
-}
 
 
     async loadCompactionCurves(projectid) {
@@ -640,6 +680,48 @@ class GFK {
         }
     }
 
+ async loadTimesheet(projectid) {
+    try {
+        if (!projectid) {
+            throw new Error("Project ID is required to load a timesheet.");
+        }
+
+        // Find the timesheet but exclude projectid and _id from the result
+        const timesheetDoc = await TimeSheets.findOne(
+            { projectid },
+            { projectid: 0, _id: 0 }  // ⬅️ exclude unwanted fields
+        );
+
+        // Return only the allowed structure
+        if (!timesheetDoc) {
+            return {
+                labor: [],
+                costs: [],
+                invoices: []
+            };
+        }
+
+        return {
+            labor: timesheetDoc.labor || [],
+            costs: timesheetDoc.costs || [],
+            invoices: timesheetDoc.invoices || []
+        };
+
+    } catch (err) {
+        console.error("Error loading timesheet:", err);
+
+        return {
+            labor: [],
+            costs: [],
+            invoices: [],
+            error: true,
+            message: `Could not load timesheet: ${err.message}`
+        };
+    }
+}
+
+
+
     async loadSlope(projectid) {
         try {
             if (!projectid) {
@@ -717,46 +799,46 @@ class GFK {
     }
 
 
-  async clientLogin(myEngineer) {
-  try {
-    // Must have at least one provider
-    if (!myEngineer.apple && !myEngineer.google) {
-      return { message: 'Missing Apple or Google ID' };
+    async clientLogin(myEngineer) {
+        try {
+            // Must have at least one provider
+            if (!myEngineer.apple && !myEngineer.google) {
+                return { message: 'Missing Apple or Google ID' };
+            }
+
+            // Determine provider
+            const provider = myEngineer.apple ? 'apple' : 'google';
+            const providerId = myEngineer[provider];
+
+            // Look for existing engineer
+            let existingEngineer = null;
+            if (provider === 'apple') {
+                existingEngineer = await this.getAppleUser(providerId);
+            } else {
+                existingEngineer = await this.getGoogleUser(providerId);
+            }
+
+            if (existingEngineer) {
+                // ✅ Wrap in object with "engineer" property
+                return { engineer: existingEngineer };
+            }
+
+            // Ensure engineer ID exists before registration
+            if (!myEngineer.engineerid) {
+                return { message: 'Cannot register engineer — engineer ID missing' };
+            }
+
+            // Register new engineer
+            const newEngineer = await this.registerNewUser(myEngineer);
+
+            // ✅ Wrap in object with "engineer" property
+            return { engineer: newEngineer };
+
+        } catch (err) {
+            console.error('Client login error:', err);
+            return { message: `Error during client login: ${err.message}` };
+        }
     }
-
-    // Determine provider
-    const provider = myEngineer.apple ? 'apple' : 'google';
-    const providerId = myEngineer[provider];
-
-    // Look for existing engineer
-    let existingEngineer = null;
-    if (provider === 'apple') {
-      existingEngineer = await this.getAppleUser(providerId);
-    } else {
-      existingEngineer = await this.getGoogleUser(providerId);
-    }
-
-    if (existingEngineer) {
-      // ✅ Wrap in object with "engineer" property
-      return { engineer: existingEngineer };
-    }
-
-    // Ensure engineer ID exists before registration
-    if (!myEngineer.engineerid) {
-      return { message: 'Cannot register engineer — engineer ID missing' };
-    }
-
-    // Register new engineer
-    const newEngineer = await this.registerNewUser(myEngineer);
-
-    // ✅ Wrap in object with "engineer" property
-    return { engineer: newEngineer };
-
-  } catch (err) {
-    console.error('Client login error:', err);
-    return { message: `Error during client login: ${err.message}` };
-  }
-}
 
 
 
@@ -834,7 +916,7 @@ class GFK {
     }
 
 
-     async findEngineerByID(engineerId) {
+    async findEngineerByID(engineerId) {
         try {
             const engineer = await MyEngineer.findById(engineerId);
             return engineer || { message: "Engineer not found" };

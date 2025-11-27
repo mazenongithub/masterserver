@@ -532,13 +532,14 @@ app.post('/:company/saveclients', checkSessionGFK, async (req, res) => {
       }
 
       // Load borings and field reports in parallel
-      const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = []] = await Promise.all([
+      const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = [], timesheet =[]] = await Promise.all([
         gfk.loadBorings(projectid).catch(() => []),
         gfk.loadFieldReports(projectid).catch(() => []),
         gfk.loadCompactionCurves(projectid).catch(() => []),
         gfk.loadSeismic(projectid).catch(() => []),
         gfk.loadPTSlab(projectid).catch(() => []),
-        gfk.loadSlope(projectid).catch(() => [])
+        gfk.loadSlope(projectid).catch(() => []),
+        gfk.loadTimesheet(projectid).catch(() => [])
 
       ]);
 
@@ -552,6 +553,7 @@ app.post('/:company/saveclients', checkSessionGFK, async (req, res) => {
         seismic,
         ptslab,
         slope,
+        timesheet,
         hasData: borings.length > 0 || fieldreports.length > 0,
         message:
           borings.length === 0 && fieldreports.length === 0
