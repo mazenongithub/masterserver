@@ -229,42 +229,42 @@ const gfkSchema = new mongoose.Schema({
 })
 
 const TimesheetSchema = new mongoose.Schema({
-  projectid: {
-    type: String,
-    required: true,
-    index: true
-  },
+    projectid: {
+        type: String,
+        required: true,
+        index: true
+    },
 
-  labor: [
-    {
-      engineerid: { type: String, required: true },
-      laborid: { type: String, required: true, unique: true },
-      timein: { type: Date, required: true },   // stored as UTC
-      timeout: { type: Date, required: true },  // stored as UTC
-      laborrate: { type: Number, required: true },
-      description: String
-    }
-  ],
+    labor: [
+        {
+            engineerid: { type: String, required: true },
+            laborid: { type: String, required: true, unique: true },
+            timein: { type: Date, required: true },   // stored as UTC
+            timeout: { type: Date, required: true },  // stored as UTC
+            laborrate: { type: Number, required: true },
+            description: String
+        }
+    ],
 
-  costs: [
-    {
-      costid: { type: String, required: true, unique: true },
-      datein: { type: Date, required: true },  // stored as UTC
-      unitcost: { type: Number, required: true },
-      unit: { type: String, default: "each" },
-      quantity: { type: Number, default: 1 },
-      description: String
-    }
-  ],
+    costs: [
+        {
+            costid: { type: String, required: true, unique: true },
+            datein: { type: Date, required: true },  // stored as UTC
+            unitcost: { type: Number, required: true },
+            unit: { type: String, default: "each" },
+            quantity: { type: Number, default: 1 },
+            description: String
+        }
+    ],
 
-  invoices: [
-    {
-      invoiceid: { type: String, required: true },
-      dateinvoice: { type: Date, required: true }, // stored as UTC
-      labor: [{ type: String }], // references labor.laborid
-      costs: [{ type: String }]  // references costs.costid
-    }
-  ]
+    invoices: [
+        {
+            invoiceid: { type: String, required: true },
+            dateinvoice: { type: Date, required: true }, // stored as UTC
+            labor: [{ type: String }], // references labor.laborid
+            costs: [{ type: String }]  // references costs.costid
+        }
+    ]
 });
 
 
@@ -680,45 +680,84 @@ class GFK {
         }
     }
 
- async loadTimesheet(projectid) {
-    try {
-        if (!projectid) {
-            throw new Error("Project ID is required to load a timesheet.");
+    async saveTimesheet(myTimesheet) {
+        try {
+            if (!myTimesheet?.projectid) {
+                throw new Error("Project ID is required to save a timesheet.");
+            }
+
+            const filter = { projectid: myTimesheet.projectid };
+            const options = {
+                new: true,    // return the updated document
+                upsert: true, // create if not found
+            };
+
+            const update = {
+                $set: {
+                    labor: Array.isArray(myTimesheet.labor) ? myTimesheet.labor : [],
+                    costs: Array.isArray(myTimesheet.costs) ? myTimesheet.costs : [],
+                    invoices: Array.isArray(myTimesheet.invoices) ? myTimesheet.invoices : []
+                }
+            };
+
+            const updatedTimesheet = await TimeSheets.findOneAndUpdate(filter, update, options);
+
+            // Return only labor, costs, invoices
+            return {
+                labor: updatedTimesheet?.labor || [],
+                costs: updatedTimesheet?.costs || [],
+                invoices: updatedTimesheet?.invoices || []
+            };
+
+        } catch (err) {
+            console.error('Error saving timesheet:', err);
+            return {
+                message: `Error: Could not save timesheet - ${err.message}`
+            };
         }
+    }
 
-        // Find the timesheet but exclude projectid and _id from the result
-        const timesheetDoc = await TimeSheets.findOne(
-            { projectid },
-            { projectid: 0, _id: 0 }  // ⬅️ exclude unwanted fields
-        );
 
-        // Return only the allowed structure
-        if (!timesheetDoc) {
+
+    async loadTimesheet(projectid) {
+        try {
+            if (!projectid) {
+                throw new Error("Project ID is required to load a timesheet.");
+            }
+
+            // Find the timesheet but exclude projectid and _id from the result
+            const timesheetDoc = await TimeSheets.findOne(
+                { projectid },
+                { projectid: 0, _id: 0 }  // ⬅️ exclude unwanted fields
+            );
+
+            // Return only the allowed structure
+            if (!timesheetDoc) {
+                return {
+                    labor: [],
+                    costs: [],
+                    invoices: []
+                };
+            }
+
+            return {
+                labor: timesheetDoc.labor || [],
+                costs: timesheetDoc.costs || [],
+                invoices: timesheetDoc.invoices || []
+            };
+
+        } catch (err) {
+            console.error("Error loading timesheet:", err);
+
             return {
                 labor: [],
                 costs: [],
-                invoices: []
+                invoices: [],
+                error: true,
+                message: `Could not load timesheet: ${err.message}`
             };
         }
-
-        return {
-            labor: timesheetDoc.labor || [],
-            costs: timesheetDoc.costs || [],
-            invoices: timesheetDoc.invoices || []
-        };
-
-    } catch (err) {
-        console.error("Error loading timesheet:", err);
-
-        return {
-            labor: [],
-            costs: [],
-            invoices: [],
-            error: true,
-            message: `Could not load timesheet: ${err.message}`
-        };
     }
-}
 
 
 

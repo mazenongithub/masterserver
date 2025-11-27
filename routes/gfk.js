@@ -514,6 +514,49 @@ app.post('/:company/saveclients', checkSessionGFK, async (req, res) => {
 });
 
 
+app.post('/gfk/savetimesheet', checkSessionGFK, async (req, res) => {
+    try {
+        const gfk = new GFK();
+        const { projectid, timesheet } = req.body;
+
+        if (!projectid) {
+            return res.status(400).json({ message: "Project ID is required." });
+        }
+
+        if (!timesheet || 
+            !Array.isArray(timesheet.labor) || 
+            !Array.isArray(timesheet.costs) || 
+            !Array.isArray(timesheet.invoices)) {
+            return res.status(400).json({ message: "All timesheet properties (labor, costs, invoices) must be arrays." });
+        }
+
+        // Save timesheet
+        const updatedTimesheet = await gfk.saveTimesheet({ projectid, ...timesheet });
+
+        if (!updatedTimesheet) {
+            return res.status(500).json({ message: "Error: Timesheet could not be saved." });
+        }
+
+        const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+
+        return res.status(200).json({
+            message: `Timesheet Saved Successfully - ${timestamp}`,
+            timesheet: updatedTimesheet
+        });
+
+    } catch (err) {
+        console.error("Error saving timesheet:", err);
+        return res.status(500).json({
+            message: `Error saving timesheet: ${err.message}`
+        });
+    }
+});
+
+
+
+
+
+
 
 
 
