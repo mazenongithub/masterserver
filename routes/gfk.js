@@ -4,7 +4,9 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { checkSessionGFK } from '../middleware/checkgfk.js'
-
+import { spawn } from 'child_process';
+import { create } from 'xmlbuilder2';
+import { streamFOP } from '../xsl/fopHelper.js';
 
 export default (app) => {
 
@@ -471,86 +473,86 @@ export default (app) => {
     }
   });
 
-app.post('/:company/saveclients', checkSessionGFK, async (req, res) => {
-  try {
-    const gfk = new GFK();
-    const company = req.params.company?.trim();
-    const clients = req.body?.clients;
-
-    if (!company) {
-      return res.status(400).json({ message: "Company is required in URL." });
-    }
-
-    if (!Array.isArray(clients)) {
-      return res.status(400).json({ message: "Clients must be an array." });
-    }
-
-    const updatedClients = await gfk.saveClients({ company, clients });
-
-    // safety check
-    if (!updatedClients) {
-      return res.status(500).json({
-        message: "Error: Clients could not be saved."
-      });
-    }
-
-    const timestamp = new Date().toLocaleString("en-US", {
-      timeZone: "America/Los_Angeles"
-    });
-
-    return res.status(200).json({
-      message: `Clients Saved Successfully - ${timestamp}`,
-      company,
-      clients: updatedClients
-    });
-
-  } catch (err) {
-    console.error("Error saving clients:", err);
-
-    return res.status(500).json({
-      message: `Error saving clients: ${err.message}`
-    });
-  }
-});
-
-
-app.post('/gfk/savetimesheet', checkSessionGFK, async (req, res) => {
+  app.post('/:company/saveclients', checkSessionGFK, async (req, res) => {
     try {
-        const gfk = new GFK();
-        const { projectid, timesheet } = req.body;
+      const gfk = new GFK();
+      const company = req.params.company?.trim();
+      const clients = req.body?.clients;
 
-        if (!projectid) {
-            return res.status(400).json({ message: "Project ID is required." });
-        }
+      if (!company) {
+        return res.status(400).json({ message: "Company is required in URL." });
+      }
 
-        if (!timesheet || 
-            !Array.isArray(timesheet.labor) || 
-            !Array.isArray(timesheet.costs) || 
-            !Array.isArray(timesheet.invoices)) {
-            return res.status(400).json({ message: "All timesheet properties (labor, costs, invoices) must be arrays." });
-        }
+      if (!Array.isArray(clients)) {
+        return res.status(400).json({ message: "Clients must be an array." });
+      }
 
-        // Save timesheet
-        const updatedTimesheet = await gfk.saveTimesheet({ projectid, ...timesheet });
+      const updatedClients = await gfk.saveClients({ company, clients });
 
-        if (!updatedTimesheet) {
-            return res.status(500).json({ message: "Error: Timesheet could not be saved." });
-        }
-
-        const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
-
-        return res.status(200).json({
-            message: `Timesheet Saved Successfully - ${timestamp}`,
-            timesheet: updatedTimesheet
+      // safety check
+      if (!updatedClients) {
+        return res.status(500).json({
+          message: "Error: Clients could not be saved."
         });
+      }
+
+      const timestamp = new Date().toLocaleString("en-US", {
+        timeZone: "America/Los_Angeles"
+      });
+
+      return res.status(200).json({
+        message: `Clients Saved Successfully - ${timestamp}`,
+        company,
+        clients: updatedClients
+      });
 
     } catch (err) {
-        console.error("Error saving timesheet:", err);
-        return res.status(500).json({
-            message: `Error saving timesheet: ${err.message}`
-        });
+      console.error("Error saving clients:", err);
+
+      return res.status(500).json({
+        message: `Error saving clients: ${err.message}`
+      });
     }
-});
+  });
+
+
+  app.post('/gfk/savetimesheet', checkSessionGFK, async (req, res) => {
+    try {
+      const gfk = new GFK();
+      const { projectid, timesheet } = req.body;
+
+      if (!projectid) {
+        return res.status(400).json({ message: "Project ID is required." });
+      }
+
+      if (!timesheet ||
+        !Array.isArray(timesheet.labor) ||
+        !Array.isArray(timesheet.costs) ||
+        !Array.isArray(timesheet.invoices)) {
+        return res.status(400).json({ message: "All timesheet properties (labor, costs, invoices) must be arrays." });
+      }
+
+      // Save timesheet
+      const updatedTimesheet = await gfk.saveTimesheet({ projectid, ...timesheet });
+
+      if (!updatedTimesheet) {
+        return res.status(500).json({ message: "Error: Timesheet could not be saved." });
+      }
+
+      const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+
+      return res.status(200).json({
+        message: `Timesheet Saved Successfully - ${timestamp}`,
+        timesheet: updatedTimesheet
+      });
+
+    } catch (err) {
+      console.error("Error saving timesheet:", err);
+      return res.status(500).json({
+        message: `Error saving timesheet: ${err.message}`
+      });
+    }
+  });
 
 
 
@@ -575,7 +577,7 @@ app.post('/gfk/savetimesheet', checkSessionGFK, async (req, res) => {
       }
 
       // Load borings and field reports in parallel
-      const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = [], timesheet =[]] = await Promise.all([
+      const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = [], timesheet = []] = await Promise.all([
         gfk.loadBorings(projectid).catch(() => []),
         gfk.loadFieldReports(projectid).catch(() => []),
         gfk.loadCompactionCurves(projectid).catch(() => []),
@@ -630,7 +632,7 @@ app.post('/gfk/savetimesheet', checkSessionGFK, async (req, res) => {
       await req.session.save();
 
       // Only load projects for a valid engineer
-       const [clients, projects] = await Promise.all([
+      const [clients, projects] = await Promise.all([
         gfk.findClients(),
         gfk.loadProjects("gfk")
       ])
@@ -638,7 +640,7 @@ app.post('/gfk/savetimesheet', checkSessionGFK, async (req, res) => {
       return res.status(200).json({
         engineer: result.engineer,
         projects,
-        gfk:{
+        gfk: {
           clients
         }
       });
@@ -701,7 +703,7 @@ app.post('/gfk/savetimesheet', checkSessionGFK, async (req, res) => {
       return res.status(200).json({
         engineer,
         projects,
-        gfk:{
+        gfk: {
           clients
         }
       });
@@ -743,6 +745,38 @@ app.post('/gfk/savetimesheet', checkSessionGFK, async (req, res) => {
       return res.status(500).json({ error: "Could not load charts." });
     }
   });
+
+
+
+  // Assuming you have a MongoDB `db` instance ready
+  // e.g., const db = client.db("yourDb");
+
+  app.get('/api/xml/:companyid', async (req, res) => {
+    try {
+      const gfk = new GFK();
+
+      const companyid = req.params.companyid;
+
+      // 1️⃣ Fetch the record from MongoDB
+      const safeProjects = JSON.parse(JSON.stringify(await gfk.loadProjects(companyid)))
+
+      if (!safeProjects) return res.status(404).send("Record not found");
+
+      // 2️⃣ Convert the record to XML
+      const xml = create({ projects: { project: safeProjects } })
+        .end({ prettyPrint: true })
+
+     
+      streamFOP(xml, 'xsl/project.xsl', res, 'gfkprojects.pdf');
+
+     
+
+    } catch (err) {
+      console.error(err);
+      res.status(500).send("Server error");
+    }
+  });
+
 
 
 
