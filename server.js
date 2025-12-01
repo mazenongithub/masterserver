@@ -65,6 +65,8 @@ const allowedOrigins = [
   'http://civilengineer.io',
   'http://appbaseddriver.civilengineer.io',
   'https://appbaseddriver.civilengineer.io',
+  'http://gfk.civilengineer.io',
+  'https://gfk.civilengineer.io'
 ];
 
 app.use(cors({

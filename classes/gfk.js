@@ -247,7 +247,8 @@ const TimesheetSchema = new mongoose.Schema({
     ],
 
     costs: [
-        {
+        {   
+            engineerid:{ type:String},
             costid: { type: String, required: true, unique: true },
             datein: { type: Date, required: true },  // stored as UTC
             unitcost: { type: Number, required: true },
@@ -262,7 +263,8 @@ const TimesheetSchema = new mongoose.Schema({
             invoiceid: { type: String, required: true },
             dateinvoice: { type: Date, required: true }, // stored as UTC
             labor: [{ type: String }], // references labor.laborid
-            costs: [{ type: String }]  // references costs.costid
+            costs: [{ type: String }],
+            transactionid: {type: String}  // references costs.costid
         }
     ]
 });
