@@ -767,7 +767,7 @@ export default (app) => {
         .end({ prettyPrint: true })
 
      
-      streamFOP(xml, 'xsl/project.xsl', res, 'gfkprojects.pdf');
+      streamFOP(xml, 'xsl/project.xsl', res, 'gfkprojects.rtf','rtf');
 
      
 
