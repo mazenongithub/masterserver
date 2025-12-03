@@ -247,8 +247,8 @@ const TimesheetSchema = new mongoose.Schema({
     ],
 
     costs: [
-        {   
-            engineerid:{ type:String},
+        {
+            engineerid: { type: String },
             costid: { type: String, required: true, unique: true },
             datein: { type: Date, required: true },  // stored as UTC
             unitcost: { type: Number, required: true },
@@ -264,7 +264,7 @@ const TimesheetSchema = new mongoose.Schema({
             dateinvoice: { type: Date, required: true }, // stored as UTC
             labor: [{ type: String }], // references labor.laborid
             costs: [{ type: String }],
-            transactionid: {type: String}  // references costs.costid
+            transactionid: { type: String }  // references costs.costid
         }
     ]
 });
@@ -823,148 +823,168 @@ class GFK {
         }
     }
 
+    
+    async  getProjectById(projectid) {
+    try {
+        const doc = await MyProjects.findOne(
+            { "projects.projectid": projectid },
+            { "projects.$": 1 }
+        );
+
+        return doc?.projects?.[0] || null;
+
+    } catch (err) {
+        console.error("Error fetching project:", err);
+        throw err; // or return null;
+    }
+}
+
+
+
 
     async loadProjects(companyid) {
 
-        try {
+    try {
 
-            let projects = await MyProjects.findOne({ companyid })
-            return projects.projects;
+        let projects = await MyProjects.findOne({ companyid })
+        return projects.projects;
 
-        } catch (err) {
+    } catch (err) {
 
-            console.error('Error loading projects:', err);
-            return { message: `Error: Could not load projects - ${err.message}` };
+        console.error('Error loading projects:', err);
+        return { message: `Error: Could not load projects - ${err.message}` };
 
-        }
     }
+}
 
 
     async clientLogin(myEngineer) {
-        try {
-            // Must have at least one provider
-            if (!myEngineer.apple && !myEngineer.google) {
-                return { message: 'Missing Apple or Google ID' };
-            }
-
-            // Determine provider
-            const provider = myEngineer.apple ? 'apple' : 'google';
-            const providerId = myEngineer[provider];
-
-            // Look for existing engineer
-            let existingEngineer = null;
-            if (provider === 'apple') {
-                existingEngineer = await this.getAppleUser(providerId);
-            } else {
-                existingEngineer = await this.getGoogleUser(providerId);
-            }
-
-            if (existingEngineer) {
-                // ✅ Wrap in object with "engineer" property
-                return { engineer: existingEngineer };
-            }
-
-            // Ensure engineer ID exists before registration
-            if (!myEngineer.engineerid) {
-                return { message: 'Cannot register engineer — engineer ID missing' };
-            }
-
-            // Register new engineer
-            const newEngineer = await this.registerNewUser(myEngineer);
-
-            // ✅ Wrap in object with "engineer" property
-            return { engineer: newEngineer };
-
-        } catch (err) {
-            console.error('Client login error:', err);
-            return { message: `Error during client login: ${err.message}` };
+    try {
+        // Must have at least one provider
+        if (!myEngineer.apple && !myEngineer.google) {
+            return { message: 'Missing Apple or Google ID' };
         }
+
+        // Determine provider
+        const provider = myEngineer.apple ? 'apple' : 'google';
+        const providerId = myEngineer[provider];
+
+        // Look for existing engineer
+        let existingEngineer = null;
+        if (provider === 'apple') {
+            existingEngineer = await this.getAppleUser(providerId);
+        } else {
+            existingEngineer = await this.getGoogleUser(providerId);
+        }
+
+        if (existingEngineer) {
+            // ✅ Wrap in object with "engineer" property
+            return { engineer: existingEngineer };
+        }
+
+        // Ensure engineer ID exists before registration
+        if (!myEngineer.engineerid) {
+            return { message: 'Cannot register engineer — engineer ID missing' };
+        }
+
+        // Register new engineer
+        const newEngineer = await this.registerNewUser(myEngineer);
+
+        // ✅ Wrap in object with "engineer" property
+        return { engineer: newEngineer };
+
+    } catch (err) {
+        console.error('Client login error:', err);
+        return { message: `Error during client login: ${err.message}` };
     }
+}
 
 
 
 
-    hashPassword(password) {
+hashPassword(password) {
 
-        return bcrypt.hashSync(password, 10);
-    }
+    return bcrypt.hashSync(password, 10);
+}
 
     async getAppleUser(appleId) {
-        try {
-            const allEngineers = await MyEngineer.find({ apple: { $exists: true } });
+    try {
+        const allEngineers = await MyEngineer.find({ apple: { $exists: true } });
 
-            for (const engineer of allEngineers) {
-                const isMatch = bcrypt.compareSync(appleId, engineer.apple);
-                if (isMatch) {
-                    return engineer; // Found
-                }
+        for (const engineer of allEngineers) {
+            const isMatch = bcrypt.compareSync(appleId, engineer.apple);
+            if (isMatch) {
+                return engineer; // Found
             }
-
-            // Return null if no match found (important!)
-            return null;
-
-        } catch (err) {
-            console.error('Error finding Apple engineer:', err);
-            throw err; // Let clientLogin handle it
         }
+
+        // Return null if no match found (important!)
+        return null;
+
+    } catch (err) {
+        console.error('Error finding Apple engineer:', err);
+        throw err; // Let clientLogin handle it
     }
+}
 
 
     async getGoogleUser(googleId) {
-        try {
-            const allEngineers = await MyEngineer.find({ google: { $exists: true } });
+    try {
+        const allEngineers = await MyEngineer.find({ google: { $exists: true } });
 
-            for (const engineer of allEngineers) {
-                const isMatch = bcrypt.compareSync(googleId, engineer.google);
-                if (isMatch) {
-                    return engineer; // Found
-                }
+        for (const engineer of allEngineers) {
+            const isMatch = bcrypt.compareSync(googleId, engineer.google);
+            if (isMatch) {
+                return engineer; // Found
             }
-
-            // Return null if no match found (important!)
-            return null;
-
-        } catch (err) {
-            console.error('Error finding Google engineer:', err);
-            throw err; // Let clientLogin handle it
         }
+
+        // Return null if no match found (important!)
+        return null;
+
+    } catch (err) {
+        console.error('Error finding Google engineer:', err);
+        throw err; // Let clientLogin handle it
     }
+}
 
 
     async registerNewUser(newEngineer) {
-        try {
-            // ✅ Hash Apple ID if it exists
-            if (newEngineer.apple) {
-                const salt = await bcrypt.genSalt(10);
-                newEngineer.apple = await bcrypt.hash(newEngineer.apple, salt);
-            }
-
-            // ✅ Hash Google ID if it exists
-            if (newEngineer.google) {
-                const salt = await bcrypt.genSalt(10);
-                newEngineer.google = await bcrypt.hash(newEngineer.google, salt);
-            }
-
-            // ✅ Create engineer in DB
-            const createdEngineer = await MyEngineer.create(newEngineer);
-
-            return createdEngineer;
-
-        } catch (err) {
-            console.error('Error registering new engineer:', err);
-            return { message: `Error: Could not register engineer - ${err.message}` };
+    try {
+        // ✅ Hash Apple ID if it exists
+        if (newEngineer.apple) {
+            const salt = await bcrypt.genSalt(10);
+            newEngineer.apple = await bcrypt.hash(newEngineer.apple, salt);
         }
+
+        // ✅ Hash Google ID if it exists
+        if (newEngineer.google) {
+            const salt = await bcrypt.genSalt(10);
+            newEngineer.google = await bcrypt.hash(newEngineer.google, salt);
+        }
+
+        // ✅ Create engineer in DB
+        const createdEngineer = await MyEngineer.create(newEngineer);
+
+        return createdEngineer;
+
+    } catch (err) {
+        console.error('Error registering new engineer:', err);
+        return { message: `Error: Could not register engineer - ${err.message}` };
     }
+}
 
 
     async findEngineerByID(engineerId) {
-        try {
-            const engineer = await MyEngineer.findById(engineerId);
-            return engineer || { message: "Engineer not found" };
-        } catch (err) {
-            return { message: `Error finding engineer: ${err.message}` };
-        }
+    try {
+        const engineer = await MyEngineer.findById(engineerId);
+        return engineer || { message: "Engineer not found" };
+    } catch (err) {
+        return { message: `Error finding engineer: ${err.message}` };
     }
+}
+
+
 
 
 

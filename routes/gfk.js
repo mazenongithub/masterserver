@@ -7,6 +7,10 @@ import { checkSessionGFK } from '../middleware/checkgfk.js'
 import { spawn } from 'child_process';
 import { create } from 'xmlbuilder2';
 import { streamFOP } from '../xsl/fopHelper.js';
+import { calcdryden, calcmoist } from '../functions/gfkfunctions.js';
+import UnconfinedCalcs from '../classes/unconfinedcalcs.js';
+import SoilClassification from '../classes/soilclassification.js';
+import { CheckUser } from '../../gfk/src/components/actions/api.js';
 
 export default (app) => {
 
@@ -751,6 +755,130 @@ export default (app) => {
   // Assuming you have a MongoDB `db` instance ready
   // e.g., const db = client.db("yourDb");
 
+  app.get('/gfk/xml/:projectid/labsummary', checkSessionGFK, async (req, res) => {
+    try {
+      const gfk = new GFK();
+      const unconfinedcalcs = new UnconfinedCalcs();
+      const { projectid } = req.params;
+
+      // Load project & borings in parallel
+      const [project, borings] = await Promise.all([
+        gfk.getProjectById(projectid),
+        gfk.loadBorings(projectid)
+      ]);
+
+      if (!project) {
+        return res.status(404).send({ message: "Project not found" });
+      }
+
+      let xml = `
+      <labsummary>
+        <projectnumber>${project.projectnumber}</projectnumber>
+        <title>${project.title}</title>
+        <projectaddress>${project.projectaddress}</projectaddress>
+        <projectcity>${project.projectcity}</projectcity>
+    `;
+
+      if (Array.isArray(borings)) {
+        // Process all borings in parallel
+        const boringXML = await Promise.all(
+          borings.map(async (boring) => {
+            if (!Array.isArray(boring.samples)) return "";
+
+            // Process all samples inside each boring in parallel
+            const sampleXML = await Promise.all(
+              boring.samples.map(async (sample) => {
+                const sampleno = `${boring.boringnumber}-${sample.sampleset}(${sample.samplenumber})`;
+                const depth = sample.depth;
+
+                const dryden = calcdryden(
+                  sample.wetwgt_2,
+                  sample.wetwgt,
+                  sample.tarewgt,
+                  sample.drywgt,
+                  sample.diameter,
+                  sample.samplelength
+                );
+
+                const moist = Number(
+                  calcmoist(sample.drywgt, sample.tarewgt, sample.wetwgt, sample.wetwgt_2) * 100
+                ).toFixed(1);
+
+                const ll = Number(sample.ll) > 0 ? Number(sample.ll) : "";
+                const pi = Number(sample.pi) > 0 ? Number(sample.pi) : "";
+
+                const maxstress = Number(unconfinedcalcs.getMaxStress(sample)) > 0
+                  ? unconfinedcalcs.getMaxStress(sample)
+                  : "";
+
+                const maxstrain = Number(unconfinedcalcs.getMaxStrain(sample)) > 0
+                  ? unconfinedcalcs.getMaxStrain(sample)
+                  : "";
+
+
+                // --- SIEVE ---
+                let sieveresult = "";
+                const sieve = sample.sieve;
+
+                if (sieve) {
+                  const netwgt = Number(sample.drywgt) - Number(sample.tarewgt);
+                  const SC = new SoilClassification(
+                    netwgt, ll, pi,
+                    Number(sieve.wgt34),
+                    Number(sieve.wgt38),
+                    Number(sieve.wgt4),
+                    Number(sieve.wgt10),
+                    Number(sieve.wgt30),
+                    Number(sieve.wgt40),
+                    Number(sieve.wgt100),
+                    Number(sieve.wgt200)
+                  );
+
+                  const gravelfrac = Number(SC.getGravFrac());
+                  const sandfrac = Number(SC.getSandFrac());
+                  const fines = Number(SC.getFines());
+
+                  if (gravelfrac > 0) sieveresult += `Gravel ${gravelfrac}%, `;
+                  if (sandfrac > 0) sieveresult += `Sand ${sandfrac}%, `;
+                  if (fines > 0) sieveresult += `Fines ${fines}%`;
+
+                  sieveresult = sieveresult.trim().replace(/,$/, "");
+                }
+
+                return `
+                <sample>
+                  <sampleno>${sampleno}</sampleno>
+                  <depth>${depth}</depth>
+                  <dryden>${dryden}</dryden>
+                  <moist>${moist}</moist>
+                  <ll>${ll}</ll>
+                  <pi>${pi}</pi>
+                  <un>${maxstress}</un>
+                  <strain>${maxstrain}</strain>
+                  <sieve>${sieveresult}</sieve>
+                </sample>`;
+              })
+            );
+
+            return sampleXML.join("");
+          })
+        );
+
+        xml += boringXML.join("");
+      }
+
+      xml += "</labsummary>";
+
+      streamFOP(xml, 'xsl/labsummary.xsl', res,  `labsummary-${project.projectnumber}.pdf`,'pdf');
+
+    } catch (err) {
+      console.error(err);
+      res.send({ message: `Error: Could not load summary ${err}` });
+    }
+  });
+
+
+
   app.get('/api/xml/:companyid', async (req, res) => {
     try {
       const gfk = new GFK();
@@ -766,10 +894,13 @@ export default (app) => {
       const xml = create({ projects: { project: safeProjects } })
         .end({ prettyPrint: true })
 
-     
-      streamFOP(xml, 'xsl/project.xsl', res, 'gfkprojects.rtf','rtf');
+      res.setHeader("Content-Type", "application/xml");
+      res.send(xml);
 
-     
+
+      // streamFOP(xml, 'xsl/project.xsl', res, 'gfkprojects.rtf','rtf');
+
+
 
     } catch (err) {
       console.error(err);
