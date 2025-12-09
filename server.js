@@ -120,12 +120,26 @@ if (!isProduction) {
     console.log(`DEV HTTPS server running on https://192.168.1.6 on port ${port}`);
   });
 
+ 
+  const internalPort = process.env.INTERNAL_PORT
+  http.createServer(app).listen(internalPort, () => {
+    console.log(`Internal HTTP for FOP images on port ${internalPort}`);
+  });
+
+
+
 } else {
   // Production = HTTP ONLY
   http.createServer(app).listen(port, () => {
     console.log(`Production HTTP server running on ${port}`);
   });
+
 }
+
+
+
+
+
 
 
 

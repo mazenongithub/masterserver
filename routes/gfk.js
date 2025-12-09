@@ -11,6 +11,7 @@ import { calcdryden, calcmoist } from '../functions/gfkfunctions.js';
 import UnconfinedCalcs from '../classes/unconfinedcalcs.js';
 import SoilClassification from '../classes/soilclassification.js';
 import { CheckUser } from '../../gfk/src/components/actions/api.js';
+import { isArray } from 'util';
 
 export default (app) => {
 
@@ -869,13 +870,164 @@ export default (app) => {
 
       xml += "</labsummary>";
 
-      streamFOP(xml, 'xsl/labsummary.xsl', res,  `labsummary-${project.projectnumber}.pdf`,'pdf');
+      streamFOP(xml, 'xsl/labsummary.xsl', res, `labsummary-${project.projectnumber}.pdf`, 'pdf');
 
     } catch (err) {
       console.error(err);
       res.send({ message: `Error: Could not load summary ${err}` });
     }
   });
+
+  app.get('/gfk/xml/:projectid/fieldreport/:fieldid', checkSessionGFK, async (req, res) => {
+    try {
+
+      const gfk = new GFK();
+      const { projectid, fieldid } = req.params;
+
+      const [project, report] = await Promise.all([
+        gfk.getProjectById(projectid),
+        gfk.findFieldReportByID(projectid, fieldid)
+      ]);
+
+      let xml = `<fieldreport>`;
+
+      // ---- PROJECT INFO ----
+      if (project) {
+        const { projectnumber, title, projectaddress, projectcity } = project;
+        xml += `
+        <projectnumber>${projectnumber}</projectnumber>
+        <title>${title}</title>
+        <address>${projectaddress}</address>
+        <city>${projectcity}</city>`;
+      }
+
+      // ---- FIELD REPORT ----
+      if (report && Array.isArray(report.fieldreports)) {
+
+        const fieldreport = report.fieldreports[0];
+        const { content } = fieldreport;
+
+        const formattedDate = new Date(fieldreport.datereport).toLocaleDateString(
+          "en-US",
+          { month: "2-digit", day: "2-digit", year: "numeric" }
+        );
+
+        xml += `
+        <datereport>${formattedDate}</datereport>
+        <content>${content}</content>`;
+
+        // ---- COMPACTION CURVES ----
+        if (Array.isArray(fieldreport.compactiontests)) {
+
+          if (fieldreport.compactiontests.length > 0) {
+
+            const curves = await gfk.loadCompactionCurves(projectid);
+
+            if (Array.isArray(curves)) {
+              xml += `<curves>`;
+
+              curves.forEach(c => {
+                xml += `
+              <curve>
+                <curvenumber>${c.curvenumber}</curvenumber>
+                <description>${c.description}</description>
+                <maxden>${c.maxden}</maxden>
+                <moist>${c.moist}</moist>
+              </curve>`;
+              });
+
+              xml += `</curves>`;
+            }
+
+            // ---- TESTS ----
+            xml += `<tests>`;
+
+            const compactiontests = fieldreport.compactiontests.sort(
+              (a, b) => Number(a.testnum) - Number(b.testnum)
+            );
+
+            compactiontests.forEach(test => {
+              const {
+                testnum,
+                elevation,
+                location,
+                wetpcf,
+                moistpcf,
+                timetest,
+                curveid
+              } = test;
+
+              const curve = curves.find(c => c.curveid === curveid) || {};
+
+              const dryden = wetpcf && moistpcf
+                ? (wetpcf - moistpcf).toFixed(1)
+                : 0;
+
+              const moist = wetpcf && moistpcf
+                ? ((moistpcf / (wetpcf - moistpcf)) * 100).toFixed(1)
+                : 0;
+
+              const maxden = curve.maxden ? Number(curve.maxden) : 0;
+
+              const relative =
+                curve.maxden && wetpcf && moistpcf
+                  ? Math.round(((wetpcf - moistpcf) / curve.maxden) * 100)
+                  : 0;
+
+              const curvenumber = curve.curvenumber || "";
+
+              xml += `
+            <test>
+              <testno>${testnum}</testno>
+              <elevation>${elevation}</elevation>
+              <location>${location}</location>
+              <wetpcf>${wetpcf}</wetpcf>
+              <moistpcf>${moistpcf}</moistpcf>
+              <dryden>${dryden}</dryden>
+              <moist>${moist}</moist>
+              <maxden>${maxden}</maxden>
+              <relative>${relative}</relative>
+              <curvenumber>${curvenumber}</curvenumber>
+            </test>`;
+            });
+
+            xml += `</tests>`;
+
+          }
+        }
+
+        // ---- IMAGES ----
+        if (Array.isArray(fieldreport.images)) {
+          if (fieldreport.images.length > 0) {
+            const isProduction = process.env.NODE_ENV === "production";
+
+            const serverAPI = isProduction
+              ? "https://masterserver.civilengineer.io"   // production API
+              : "http://192.168.1.6:3002";                    // local/dev API
+
+            xml += `<images>`;
+            fieldreport.images.forEach(img => {
+              xml += `
+            <image>
+              <url>${serverAPI}${img.image}</url>
+              <caption>${img.caption}</caption>
+            </image>`;
+            });
+            xml += `</images>`;
+          }
+
+        }
+      }
+
+      xml += `</fieldreport>`;
+
+      streamFOP(xml, 'xsl/fieldreport.xsl', res, `fieldreport-${fieldid}.pdf`, 'pdf');
+
+    } catch (err) {
+      res.send({ Error: `Could not load field report ${err}` });
+    }
+  });
+
 
 
 
