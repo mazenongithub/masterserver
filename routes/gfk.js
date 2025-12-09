@@ -289,7 +289,7 @@ export default (app) => {
     try {
       const gfk = new GFK();
       const { projectid, fieldreports } = req.body;
-      console.log(projectid, fieldreports)
+      
       const myFieldReports = { projectid, fieldreports }
 
       const updatedFieldReports = await gfk.saveFieldReports(myFieldReports);
@@ -403,7 +403,7 @@ export default (app) => {
       const gfk = new GFK();
       const { projectid, slope } = req.body;
 
-      console.log(projectid, slope);
+    
 
       // Validate input
       if (!projectid || !slope || typeof slope !== "object") {
@@ -417,7 +417,7 @@ export default (app) => {
 
       // Save slope data
       const savedSlope = await gfk.saveSlope(slope);
-      console.log(savedSlope)
+    
 
       // Local timestamp
       const timestamp = new Date().toLocaleString("en-US", {
@@ -1020,7 +1020,6 @@ export default (app) => {
       }
 
       xml += `</fieldreport>`;
-
       streamFOP(xml, 'xsl/fieldreport.xsl', res, `fieldreport-${fieldid}.pdf`, 'pdf');
 
     } catch (err) {
