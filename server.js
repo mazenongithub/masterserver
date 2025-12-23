@@ -6,6 +6,7 @@ import mongoose from 'mongoose'
 import { connectDB } from './config/mongodb.js';
 import appbaseddriver from './routes/appbaseddriver.js';
 import gfk from './routes/gfk.js'
+import civilengineer from './routes/civilengineer.js'
 import cors from 'cors';
 import sessionMiddleware from "./middleware/session.js";
 import path from "path";
@@ -109,6 +110,7 @@ app.get("/", (req, res) => {
 
 appbaseddriver(app);
 gfk(app);
+civilengineer(app);
 
 
 
@@ -120,7 +122,7 @@ if (!isProduction) {
     console.log(`DEV HTTPS server running on https://192.168.1.6 on port ${port}`);
   });
 
- 
+
   const internalPort = process.env.INTERNAL_PORT
   http.createServer(app).listen(internalPort, () => {
     console.log(`Internal HTTP for FOP images on port ${internalPort}`);
