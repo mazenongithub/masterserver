@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs'
+import transporter from '../functions/mailer.js';
 const ProjectSchema = new mongoose.Schema({
     companyid: String,
     projects: [{
@@ -270,6 +271,25 @@ const TimesheetSchema = new mongoose.Schema({
 });
 
 
+const contactSchema = new mongoose.Schema({
+    company: String,
+    lab: { type: Boolean, default: false },
+    liquefaction: { type: Boolean, default: false },
+    logdraft: { type: Boolean, default: false },
+    description: String,
+    emailaddress: { type: String, required: true },
+    fullname: { type: String, required: true },
+    field: { type: Boolean, default: false },
+    phonenumber: { type: String, required: true },
+    ptslab: { type: Boolean, default: false },
+    slope: { type: Boolean, default: false },
+    reports: { type: Boolean, default: false },
+    invoice: { type: Boolean, default: false },
+    created: { type: Date, default: Date.now }
+
+})
+
+const GFKContactUs = mongoose.model("GFKContactUs", contactSchema);
 const MyProjects = mongoose.model("gfkprojects", ProjectSchema);
 const MyBorings = mongoose.model("myborings", BoringSchema);
 const FieldReports = mongoose.model("fieldreports", fieldReportSchema)
@@ -284,7 +304,159 @@ const TimeSheets = mongoose.model("timesheets", TimesheetSchema)
 
 class GFK {
 
+    async sendContactEmail(values) {
+  let {
+    emailaddress,
+    fullname,
+    company,
+    phonenumber,
+    lab,
+    liquefaction,
+    logdraft,
+    field,
+    ptslab,
+    description,
+    slope,
+    reports,
+    invoice,
+    created
+  } = values;
 
+  created = new Date(created).toLocaleTimeString('en-US', {
+    timeZone: 'America/Los_Angeles'
+  });
+
+  const labModules = lab
+    ? `
+      <li>Liquefaction Analysis: ${liquefaction ? 'Yes' : 'No'}</li>
+      <li>PT Slab Design & Reporting: ${ptslab ? 'Yes' : 'No'}</li>
+      <li>Geotechnical Log Drafting: ${logdraft ? 'Yes' : 'No'}</li>
+    `
+    : `<li>Soil Lab Add-on Modules: N/A</li>`;
+
+  await transporter.sendMail({
+    from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
+    to: 'mazen@civilengineer.io',
+    replyTo: emailaddress,
+    subject: 'New Service Request Submission',
+    html: `
+      <div style="font-family: Arial, Helvetica, sans-serif; color: #333;">
+        <h2>New Service Request</h2>
+
+        <p><strong>Name:</strong> ${fullname}</p>
+        <p><strong>Company:</strong> ${company || 'N/A'}</p>
+        <p><strong>Email:</strong> ${emailaddress}</p>
+        <p><strong>Phone:</strong> ${phonenumber || 'N/A'}</p>
+
+        <h3>Services Requested</h3>
+        <ul>
+          <li>Soil Lab Reporting Platform: ${lab ? 'Yes' : 'No'}</li>
+          ${labModules}
+          <li>Field Reports and Reporting: ${field ? 'Yes' : 'No'}</li>
+          <li>Slope Stability: ${slope ? 'Yes' : 'No'}</li>
+          <li>Geotechnical Proposals and Reports: ${reports ? 'Yes' : 'No'}</li>
+          <li>Time / Invoice: ${invoice ? 'Yes' : 'No'}</li>
+        </ul>
+
+        <h3>Brief Description of Needs</h3>
+        <p style="white-space: pre-line;">
+          ${description}
+        </p>
+
+        <hr />
+
+        <p style="font-size: 12px; color: #777;">
+          This message was generated from the CivilEngineer.io contact form on ${created}.
+        </p>
+      </div>
+    `
+  });
+}
+
+
+    async sendClientEmail(values) {
+
+        let { emailaddress, fullname, company, phonenumber, lab, liquefaction, logdraft, field, ptslab, description, slope, reports, invoice, created } = values
+        created = new Date(created).toLocaleTimeString('en-US', {
+            timeZone: 'America/Los_Angeles'
+        });
+
+         const labModules = lab
+    ? `
+      <li>Liquefaction Analysis: ${liquefaction ? 'Yes' : 'No'}</li>
+      <li>PT Slab Design & Reporting: ${ptslab ? 'Yes' : 'No'}</li>
+      <li>Geotechnical Log Drafting: ${logdraft ? 'Yes' : 'No'}</li>
+    `
+    : `<li>Soil Lab Add-on Modules: N/A</li>`;
+
+        await transporter.sendMail({
+            from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
+            to: emailaddress,
+            subject: 'We received your service request',
+            html: `
+        <div style="font-family: Arial, Helvetica, sans-serif; color: #333;">
+          <h2>Thank you for contacting CivilEngineer.io</h2>
+    
+          <p>Hi ${fullname},</p>
+    
+          <p>
+            We’ve received your service request and a member of our team will review it shortly.
+          </p>
+    
+          <h3>Your Request Summary</h3>
+    
+          <p><strong>Company:</strong> ${company || 'N/A'}</p>
+    
+          <ul>
+            <li>Soil Lab Reporting Platform : ${lab ? 'Yes' : 'No'}</li>
+            ${labModules}
+            <li>Field Reports and Reporting: ${field ? 'Yes' : 'No'}</li>
+            <li>Slope Stability: ${slope ? 'Yes' : 'No'}</li>
+            <li>Geotechnical Proposals and Reports: ${reports ? 'Yes' : 'No'}</li>
+            <li>Time/Invoice: ${invoice ? 'Yes' : 'No'}</li>
+          </ul>
+    
+          <h3>Details</h3>
+          <p style="white-space: pre-line;">
+            ${description}
+          </p>
+    
+          <p>
+            If you need to add information, simply reply to this email.
+          </p>
+    
+          <p>
+            — CivilEngineer.io Team
+          </p>
+    
+          <hr />
+          <p style="font-size: 12px; color: #777;">
+            This is an automated confirmation created on ${created}. Please do not share sensitive information by email.
+          </p>
+    
+    
+        </div>
+      `
+        });
+
+    }
+
+    async insertContact(contact) {
+
+        try {
+
+            const contactus = await GFKContactUs.insertOne(contact);
+            return contactus;
+
+
+        } catch (err) {
+
+            console.error('Error inserting contact form:', err);
+            return { message: `Error: Could not insert contact form - ${err.message}` };
+        }
+
+
+    }
 
     async saveProjects(myProjects) {
         try {

@@ -4,14 +4,12 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { checkSessionGFK } from '../middleware/checkgfk.js'
-import { spawn } from 'child_process';
 import { create } from 'xmlbuilder2';
 import { streamFOP } from '../xsl/fopHelper.js';
 import { calcdryden, calcmoist } from '../functions/gfkfunctions.js';
 import UnconfinedCalcs from '../classes/unconfinedcalcs.js';
 import SoilClassification from '../classes/soilclassification.js';
-import { CheckUser } from '../../gfk/src/components/actions/api.js';
-import { isArray } from 'util';
+
 
 export default (app) => {
 
@@ -53,6 +51,70 @@ export default (app) => {
   // Routes
   const uploadFieldImage = multer({ storage: createStorage('uploads/gfk/fieldimages') });
   const uploadLogDraft = multer({ storage: createStorage('uploads/gfk/logdraft') });
+
+  app.post('/gfk/savecontactus', async (req, res) => {
+    const gfk = new GFK();
+    try {
+      const {
+        fullname,
+        company,
+        emailaddress,
+        phonenumber,
+        lab,
+        liquefaction,
+        logdraft,
+        field,
+        ptslab,
+        slope,
+        reports,
+        invoice,
+        description
+      } = req.body;
+
+      // Required field validation
+      if (!fullname || !emailaddress) {
+        return res.status(400).json({
+          error: 'fullname, emailaddress, and detail are required'
+        });
+      }
+
+      // Build document matching schema
+      const values = {
+        company: company || '',
+        lab: Boolean(lab),
+        liquefaction: Boolean(liquefaction),
+        logdraft: Boolean(logdraft),
+        description: description || "",
+        emailaddress,
+        fullname,
+        field: Boolean(field),
+        phonenumber: phonenumber || '',
+        ptslab: Boolean(ptslab),
+        slope: Boolean(slope),
+        reports: Boolean(reports),
+        invoice: Boolean(invoice),
+        created: new Date()
+      };
+
+      const contactus = await gfk.insertContact(values)
+
+      // Send both emails in parallel
+      await Promise.all([
+        gfk.sendContactEmail(contactus),
+        gfk.sendClientEmail(contactus)
+      ]);
+
+      return res.status(201).json({ contactus, message: `Your request have been submitted successfully ` });
+
+    } catch (err) {
+      console.error('save contact us error:', err);
+
+      return res.status(500).json({
+        error: 'could not save contact us form'
+      });
+    }
+  })
+
 
   app.post("/gfk/upload/fieldimage", checkSessionGFK, uploadFieldImage.single("fieldimage"), async (req, res) => {
 
@@ -289,7 +351,7 @@ export default (app) => {
     try {
       const gfk = new GFK();
       const { projectid, fieldreports } = req.body;
-      
+
       const myFieldReports = { projectid, fieldreports }
 
       const updatedFieldReports = await gfk.saveFieldReports(myFieldReports);
@@ -403,7 +465,7 @@ export default (app) => {
       const gfk = new GFK();
       const { projectid, slope } = req.body;
 
-    
+
 
       // Validate input
       if (!projectid || !slope || typeof slope !== "object") {
@@ -417,7 +479,7 @@ export default (app) => {
 
       // Save slope data
       const savedSlope = await gfk.saveSlope(slope);
-    
+
 
       // Local timestamp
       const timestamp = new Date().toLocaleString("en-US", {
