@@ -2,6 +2,24 @@ import transporter from '../functions/mailer.js';
 
 class CivilEngineer {
 
+  async verifyTurnstile(token, ip) {
+  const response = await fetch(
+    "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        secret: process.env.TURNSTILE_SECRET_KEY,
+        response: token,
+        remoteip: ip
+      })
+    }
+  );
+
+  return response.json();
+}
+
+
     async sendContactEmail(values) {
         let { emailaddress, fullname, company, phonenumber, geotechnical, projectmanagement, design, construction, customapp, detail, created } = values
         created = new Date(created).toLocaleTimeString('en-US', {

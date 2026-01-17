@@ -21,6 +21,7 @@ export default (app) => {
 
     app.post('/civilengineer/savecontactus', async (req, res) => {
         try {
+            const civilengineer = new CivilEngineer();
             const {
                 company,
                 construction,
@@ -31,13 +32,30 @@ export default (app) => {
                 fullname,
                 geotechnical,
                 phonenumber,
-                projectmanagement
+                projectmanagement,
+                captchaToken
             } = req.body;
+
+            if (!captchaToken) {
+                return res.status(400).json({ message: "Captcha required" });
+            }
 
             // Required field validation
             if (!fullname || !emailaddress || !detail) {
                 return res.status(400).json({
                     error: 'fullname, emailaddress, and detail are required'
+                });
+            }
+
+
+            const verification = await civilengineer.verifyTurnstile(
+                captchaToken,
+                req.ip
+            );
+
+            if (!verification.success) {
+                return res.status(403).json({
+                    message: "Captcha verification failed"
                 });
             }
 
@@ -58,7 +76,7 @@ export default (app) => {
 
             const contactus = await ContactUs.insertOne(values);
 
-            const civilengineer = new CivilEngineer();
+           
 
             // Send both emails in parallel
             await Promise.all([
