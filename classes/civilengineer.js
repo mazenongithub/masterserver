@@ -3,6 +3,7 @@ import transporter from '../functions/mailer.js';
 class CivilEngineer {
 
   async verifyTurnstile(token, ip) {
+
   const response = await fetch(
     "https://challenges.cloudflare.com/turnstile/v0/siteverify",
     {
