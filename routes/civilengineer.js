@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import CivilEngineer from '../classes/civilengineer.js'
+import { rateLimiter } from '../middleware/ratelimit.js';
 const contactSchema = new mongoose.Schema({
     company: String,
     construction: { type: Boolean, default: false },
@@ -19,7 +20,7 @@ const ContactUs = mongoose.model("ContactUs", contactSchema);
 
 export default (app) => {
 
-    app.post('/civilengineer/savecontactus', async (req, res) => {
+    app.post('/civilengineer/savecontactus', rateLimiter, async (req, res) => {
         try {
             const civilengineer = new CivilEngineer();
             const {
@@ -55,7 +56,7 @@ export default (app) => {
 
             if (!verification.success) {
                 return res.status(403).json({
-                    message: "Captcha verification failed"
+                    error: "Captcha verification failed"
                 });
             }
 
@@ -90,7 +91,7 @@ export default (app) => {
             console.error('save contact us error:', err);
 
             return res.status(500).json({
-                error: 'could not save contact us form'
+                error: `could not save contact us form ${err}`
             });
         }
     })
