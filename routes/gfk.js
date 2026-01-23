@@ -9,7 +9,8 @@ import { streamFOP } from '../xsl/fopHelper.js';
 import { calcdryden, calcmoist } from '../functions/gfkfunctions.js';
 import UnconfinedCalcs from '../classes/unconfinedcalcs.js';
 import SoilClassification from '../classes/soilclassification.js';
-
+import CivilEngineer from '../classes/civilengineer.js'
+import { rateLimiter } from '../middleware/ratelimit.js';
 
 export default (app) => {
 
@@ -52,8 +53,10 @@ export default (app) => {
   const uploadFieldImage = multer({ storage: createStorage('uploads/gfk/fieldimages') });
   const uploadLogDraft = multer({ storage: createStorage('uploads/gfk/logdraft') });
 
-  app.post('/gfk/savecontactus', async (req, res) => {
+  app.post('/gfk/savecontactus', rateLimiter, async (req, res) => {
     const gfk = new GFK();
+    const civilengineer = new CivilEngineer();
+
     try {
       const {
         fullname,
@@ -68,13 +71,29 @@ export default (app) => {
         slope,
         reports,
         invoice,
-        description
+        description,
+        captchaToken
       } = req.body;
+
+      if (!captchaToken) {
+        return res.status(400).json({ message: "Captcha required" });
+      }
 
       // Required field validation
       if (!fullname || !emailaddress) {
         return res.status(400).json({
           error: 'fullname, emailaddress, and detail are required'
+        });
+      }
+
+      const verification = await civilengineer.verifyTurnstile(
+        captchaToken,
+        req.ip
+      );
+
+      if (!verification.success) {
+        return res.status(403).json({
+          error: "Captcha verification failed"
         });
       }
 
