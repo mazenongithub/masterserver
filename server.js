@@ -7,6 +7,7 @@ import { connectDB } from './config/mongodb.js';
 import appbaseddriver from './routes/appbaseddriver.js';
 import gfk from './routes/gfk.js'
 import civilengineer from './routes/civilengineer.js'
+import geotech from './routes/geotech.js'
 import cors from 'cors';
 import sessionMiddleware from "./middleware/session.js";
 import path from "path";
@@ -67,7 +68,9 @@ const allowedOrigins = [
   'http://appbaseddriver.civilengineer.io',
   'https://appbaseddriver.civilengineer.io',
   'http://gfk.civilengineer.io',
-  'https://gfk.civilengineer.io'
+  'https://gfk.civilengineer.io',
+   'https://geotech.civilengineer.io',
+   'http://geotech.civilengineer.io'
 ];
 
 app.use(cors({
@@ -111,6 +114,7 @@ app.get("/", (req, res) => {
 appbaseddriver(app);
 gfk(app);
 civilengineer(app);
+geotech(app)
 
 
 
