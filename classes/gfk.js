@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs'
 import transporter from '../functions/mailer.js';
+
 const ProjectSchema = new mongoose.Schema({
     companyid: String,
     projects: [{
@@ -223,7 +224,9 @@ const gfkSchema = new mongoose.Schema({
         contactstate: String,
         zipcode: String,
         emailaddress: String,
-        phonenumber: String
+        phonenumber: String,
+        apple:String,
+        google:String
 
     }]
 
@@ -1186,3 +1189,4 @@ class GFK {
 }
 
 export default GFK;
+export { GFKCompany, MyProjects };       // named export

@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import transporter from '../functions/mailer.js';
 import path from 'path'
 import { fileURLToPath } from "url";
+import bcrypt from 'bcryptjs'
+import GFK, { GFKCompany, MyProjects } from './gfk.js';
 
 
 
@@ -106,6 +108,65 @@ class Geotech {
 
 
     }
+
+    async findProjectsByClientID(clientID) {
+        try {
+            // 1️⃣ Validate clientID
+            if (!clientID || !mongoose.Types.ObjectId.isValid(clientID)) {
+                throw new Error("Invalid client ID");
+            }
+
+            // 2️⃣ Query for projects that match the clientID
+            const company = await MyProjects.findOne(
+                { "projects.clientid": clientID },
+                { "projects.$": 1 } // only return matched projects
+            );
+
+            // 3️⃣ Handle no projects found
+            if (!company || !company.projects.length) {
+                return [];
+            }
+
+            // 4️⃣ Return all matching projects
+            // If multiple projects per client, use $filter
+            const allProjects = company.projects.filter(
+                p => p.clientid === clientID
+            );
+
+            return allProjects;
+
+        } catch (err) {
+            console.error("findProjectsByClientID error:", err);
+            throw err;
+        }
+    }
+
+
+   async findClientByID(clientID) {
+    try {
+        // 1️⃣ Validate ID
+        if (!clientID || !mongoose.Types.ObjectId.isValid(clientID)) {
+            throw new Error("Invalid client ID");
+        }
+
+        // 2️⃣ Query embedded client
+        const company = await GFKCompany.findOne(
+            { company: "gfk", "clients._id": clientID },
+            { "clients.$": 1 }
+        );
+
+        if (!company || !company.clients.length) {
+            return null; // client not found
+        }
+
+        // 3️⃣ Return the matched client
+        return company.clients[0];
+
+    } catch (err) {
+        console.error("findClientByID error:", err);
+        throw err; // let route handler decide response
+    }
+}
 
     async sendContactEmail(values) {
 
@@ -232,6 +293,179 @@ class Geotech {
             html: ``
         })
     }
+
+
+    async clientLogin(myClient) {
+        try {
+            // Must have at least one provider
+            if (!myClient.apple && !myClient.google) {
+                return { message: 'Missing Apple or Google ID' };
+            }
+
+            // Determine provider
+            const provider = myClient.apple ? 'apple' : 'google';
+            const providerId = myClient[provider];
+
+            // Look for existing client
+            let existingClient = null;
+            if (provider === 'apple') {
+                existingClient = await this.getAppleUser(providerId);
+            } else {
+                existingClient = await this.getGoogleUser(providerId);
+            }
+
+            if (existingClient) {
+                // ✅ Wrap in object with "client" property
+                return existingClient ;
+            }
+
+            // Ensure client ID exists before registration
+            if (!myClient.clientid) {
+                return { message: 'Cannot register client — client ID missing' };
+            }
+
+            // Register new client
+            const newClient = await this.registerNewUser(myClient);
+
+            // ✅ Wrap in object with "client" property
+            return newClient;
+
+        } catch (err) {
+            console.error('Client login error:', err);
+            return { message: `Error during client login: ${err.message}` };
+        }
+    }
+
+    hashPassword(password) {
+
+        return bcrypt.hashSync(password, 10);
+    }
+
+    async getAppleUser(appleId) {
+        try {
+            const result = await GFKCompany.aggregate([
+                { $match: { company: "gfk" } },
+                { $unwind: "$clients" },
+                {
+                    $match: {
+                        "clients.apple": { $exists: true, $ne: null, $ne: "" }
+                    }
+                },
+                {
+                    $replaceRoot: { newRoot: "$clients" }
+                }
+            ]);
+
+            const allClients = result;
+
+            for (const client of allClients) {
+                const isMatch = bcrypt.compareSync(appleId, client.apple);
+                if (isMatch) {
+                    return {client}; // Found
+                }
+            }
+
+            // Return null if no match found (important!)
+            return null;
+
+        } catch (err) {
+            console.error('Error finding Apple client:', err);
+            throw err; // Let clientLogin handle it
+        }
+    }
+
+
+    async getGoogleUser(googleId) {
+        try {
+            const result = await GFKCompany.aggregate([
+                { $match: { company: "gfk" } },
+                { $unwind: "$clients" },
+                {
+                    $match: {
+                        "clients.google": { $exists: true, $ne: null, $ne: "" }
+                    }
+                },
+                {
+                    $replaceRoot: { newRoot: "$clients" }
+                }
+            ]);
+
+            const allClients = result;
+
+            for (const client of allClients) {
+                const isMatch = bcrypt.compareSync(googleId, client.google);
+                if (isMatch) {
+                    return {client}; // Found
+                }
+            }
+
+            // Return null if no match found (important!)
+            return null;
+
+        } catch (err) {
+            console.error('Error finding Google client:', err);
+            throw err; // Let clientLogin handle it
+        }
+    }
+
+
+    async registerNewUser(values) {
+        try {
+            // ✅ Hash Apple ID if it exists
+            const SALT_ROUNDS = 10;
+
+            const appleHash = values.apple
+                ? await bcrypt.hash(values.apple, SALT_ROUNDS)
+                : "";
+            const googleHash = values.google
+                ? await bcrypt.hash(values.google, SALT_ROUNDS)
+                : "";
+
+            // ✅ Create client in DB
+            // 2. Generate client object
+            const newClient = {
+                clientid: values.clientid,
+                prefix: values.prefix || "",
+                firstname: values.firstname,
+                lastname: values.lastname,
+                company: values.company || "",
+                address: values.address || "",
+                city: values.city || "",
+                contactstate: values.contactstate || "",
+                zipcode: values.zipcode || "",
+                emailaddress: values.emailaddress || "",
+                phonenumber: values.phonenumber || "",
+                apple: appleHash,
+                google: googleHash
+            };
+
+            // 3. Check for duplicate Apple or Google ID
+            const existing = await GFKCompany.findOne({
+                company: "gfk",
+                $or: [
+                    { "clients.apple": appleHash },
+                    { "clients.google": googleHash }
+                ]
+            });
+
+            if (existing) {
+                throw new Error("Client already exists");
+            }
+
+            // 4. Push new client into the company
+            await GFKCompany.updateOne(
+                { company: "gfk" },
+                { $push: { clients: newClient } }
+            );
+
+            return {client:newClient};
+
+        } catch (err) {
+            console.error('Error registering new client:', err);
+            return { message: `Error: Could not register client - ${err.message}` };
+        }
+    }
+
 
 }
 
