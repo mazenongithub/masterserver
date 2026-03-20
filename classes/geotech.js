@@ -142,31 +142,31 @@ class Geotech {
     }
 
 
-   async findClientByID(clientID) {
-    try {
-        // 1️⃣ Validate ID
-        if (!clientID || !mongoose.Types.ObjectId.isValid(clientID)) {
-            throw new Error("Invalid client ID");
+    async findClientByID(clientID) {
+        try {
+            // 1️⃣ Validate ID
+            if (!clientID || !mongoose.Types.ObjectId.isValid(clientID)) {
+                throw new Error("Invalid client ID");
+            }
+
+            // 2️⃣ Query embedded client
+            const company = await GFKCompany.findOne(
+                { company: "gfk", "clients._id": clientID },
+                { "clients.$": 1 }
+            );
+
+            if (!company || !company.clients.length) {
+                return null; // client not found
+            }
+
+            // 3️⃣ Return the matched client
+            return company.clients[0];
+
+        } catch (err) {
+            console.error("findClientByID error:", err);
+            throw err; // let route handler decide response
         }
-
-        // 2️⃣ Query embedded client
-        const company = await GFKCompany.findOne(
-            { company: "gfk", "clients._id": clientID },
-            { "clients.$": 1 }
-        );
-
-        if (!company || !company.clients.length) {
-            return null; // client not found
-        }
-
-        // 3️⃣ Return the matched client
-        return company.clients[0];
-
-    } catch (err) {
-        console.error("findClientByID error:", err);
-        throw err; // let route handler decide response
     }
-}
 
     async sendContactEmail(values) {
 
@@ -316,7 +316,7 @@ class Geotech {
 
             if (existingClient) {
                 // ✅ Wrap in object with "client" property
-                return existingClient ;
+                return existingClient;
             }
 
             // Ensure client ID exists before registration
@@ -361,7 +361,7 @@ class Geotech {
             for (const client of allClients) {
                 const isMatch = bcrypt.compareSync(appleId, client.apple);
                 if (isMatch) {
-                    return {client}; // Found
+                    return { client }; // Found
                 }
             }
 
@@ -395,7 +395,7 @@ class Geotech {
             for (const client of allClients) {
                 const isMatch = bcrypt.compareSync(googleId, client.google);
                 if (isMatch) {
-                    return {client}; // Found
+                    return { client }; // Found
                 }
             }
 
@@ -411,18 +411,16 @@ class Geotech {
 
     async registerNewUser(values) {
         try {
-            // ✅ Hash Apple ID if it exists
             const SALT_ROUNDS = 10;
 
             const appleHash = values.apple
                 ? await bcrypt.hash(values.apple, SALT_ROUNDS)
                 : "";
+
             const googleHash = values.google
                 ? await bcrypt.hash(values.google, SALT_ROUNDS)
                 : "";
 
-            // ✅ Create client in DB
-            // 2. Generate client object
             const newClient = {
                 clientid: values.clientid,
                 prefix: values.prefix || "",
@@ -439,7 +437,7 @@ class Geotech {
                 google: googleHash
             };
 
-            // 3. Check for duplicate Apple or Google ID
+            // Check duplicates
             const existing = await GFKCompany.findOne({
                 company: "gfk",
                 $or: [
@@ -452,20 +450,59 @@ class Geotech {
                 throw new Error("Client already exists");
             }
 
-            // 4. Push new client into the company
-            await GFKCompany.updateOne(
+            // Push client and return updated doc
+            const result = await GFKCompany.findOneAndUpdate(
                 { company: "gfk" },
-                { $push: { clients: newClient } }
+                { $push: { clients: newClient } },
+                { new: true }
             );
 
-            return {client:newClient};
+            if (!result) {
+                throw new Error("Company not found");
+            }
+
+            // Get the last inserted client (Mongo just added it)
+            const client = result.clients[result.clients.length - 1];
+
+            return { client };
 
         } catch (err) {
-            console.error('Error registering new client:', err);
-            return { message: `Error: Could not register client - ${err.message}` };
+            console.error("Error registering new client:", err);
+            return {
+                message: `Error: Could not register client - ${err.message}`
+            };
         }
     }
 
+    async saveProfile(values) {
+        try {
+            if (!values || !values._id) {
+                throw new Error("Client _id is required for update");
+            }
+
+            const clientId = new mongoose.Types.ObjectId(values._id);
+
+            const result = await GFKCompany.findOneAndUpdate(
+                { company: "gfk", "clients._id": clientId },
+                {
+                    $set: Object.fromEntries(
+                        Object.entries(values).map(([k, v]) => [`clients.$.${k}`, v])
+                    )
+                },
+                { new: true }
+            );
+
+            if (!result) {
+                throw new Error("Client not found");
+            }
+
+            return result.clients.find(c => c._id.equals(clientId));
+
+        } catch (err) {
+            console.error("Error in saveProfile:", err);
+            throw err;
+        }
+    }
 
 }
 

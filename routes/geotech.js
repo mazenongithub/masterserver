@@ -1,7 +1,77 @@
 import Geotech from "../classes/geotech.js"
 import CivilEngineer from '../classes/civilengineer.js'
 import mongoose from 'mongoose';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import crypto from "crypto";
+import GFK, { GFKCompany, MyProjects } from '../classes/gfk.js';
 export default (app) => {
+
+    // Multer storage
+    // Temporary upload folder
+    const upload = multer({ dest: "uploads/temp" }); // multer saves to temp first
+
+    app.post("/geotech/uploadprofilephoto", upload.single("profilephoto"), async (req, res) => {
+        try {
+
+
+            const myuser = req.body.myuser ? JSON.parse(req.body.myuser) : null;
+
+            if (!req.file || !myuser || !myuser._id) {
+                return res.status(400).send({ message: "File or user data missing" });
+            }
+
+            const clientObjectId = new mongoose.Types.ObjectId(req.session.clientID);
+
+            // Find company and client
+            const company = await GFKCompany.findOne({ company: "gfk" });
+            if (!company) return res.status(404).send({ message: "Company not found" });
+
+            const client = company.clients.id(clientObjectId);
+            if (!client) return res.status(404).send({ message: "Client not found" });
+
+            // Build final filename: clientid + random string + extension
+            const ext = path.extname(req.file.originalname);
+            const random = crypto.randomBytes(6).toString("hex");
+            const finalFilename = `${myuser.clientid || client._id}-${random}${ext}`;
+            const finalPath = path.join("uploads/profilephotos", finalFilename);
+
+
+
+            // Move file from temp to final folder
+            fs.renameSync(req.file.path, finalPath);
+
+            const newProfileUrl = `/uploads/profilephotos/${finalFilename}`;
+
+            // Delete old profile photo if exists
+            if (client.profileurl) {
+                const oldPath = path.join(process.cwd(), client.profileurl.replace(/^\//, ""));
+                if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+            }
+
+            // Update client object with new profile URL and any other fields from myuser
+            Object.assign(client, { ...myuser, profileurl: newProfileUrl });
+
+            await company.save();
+
+             const createdAt = new Date().toLocaleString('en-US', {
+                timeZone: 'America/Los_Angeles',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+            });
+
+            return res.send({ myuser: client, message:`Profile Saved ${createdAt}` });
+
+        } catch (err) {
+            console.error("Upload error:", err);
+            res.status(500).send({ message: "Could not upload profile photo" });
+        }
+    });
 
     app.post("/geotech/savecontactus", async (req, res) => {
         const geotech = new Geotech();
@@ -61,6 +131,7 @@ export default (app) => {
         try {
             // 1️⃣ Check session
             const clientID = req.session?.clientID;
+
             if (!clientID) {
                 return res.status(401).json({ message: "Not authenticated" });
             }
@@ -70,6 +141,8 @@ export default (app) => {
             if (!client) {
                 return res.status(404).json({ message: "Client not found" });
             }
+
+
 
             // 3️⃣ Fetch client's projects
             const projects = await geotech.findProjectsByClientID(clientID);
@@ -88,6 +161,7 @@ export default (app) => {
         const geotech = new Geotech();
         const clientInfo = req.body; // no need to spread
 
+
         try {
             // 1️⃣ Attempt client login
             const result = await geotech.clientLogin(clientInfo);
@@ -98,6 +172,7 @@ export default (app) => {
             }
 
             const client = result.client;
+
 
             // 3️⃣ Save session
             req.session.clientID = client._id;
@@ -140,6 +215,41 @@ export default (app) => {
                 message: `${clientid} has been logged out successfully`
             });
         });
+    });
+
+
+    app.post('/geotech/saveprofile', async (req, res) => {
+        const geotech = new Geotech();
+
+
+        try {
+            const myuser = req.body.myuser;
+
+
+            // Save the profile
+            const savedUser = await geotech.saveProfile(myuser);
+
+            const createdAt = new Date().toLocaleString('en-US', {
+                timeZone: 'America/Los_Angeles',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+            });
+
+            // Send success response
+            res.status(200).json({ success: true, user: savedUser, message: `Profile Saved ${createdAt}` });
+        } catch (err) {
+            console.error('Error saving profile:', err);
+
+            // Send error response
+            res.status(500).json({
+                success: false,
+                message: `Could not save profile: ${err.message || err}`
+            });
+        }
     });
 
 

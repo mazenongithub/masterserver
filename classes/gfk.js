@@ -226,7 +226,8 @@ const gfkSchema = new mongoose.Schema({
         emailaddress: String,
         phonenumber: String,
         apple:String,
-        google:String
+        google:String,
+        profileurl:String
 
     }]
 
