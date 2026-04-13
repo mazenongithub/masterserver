@@ -55,7 +55,7 @@ export default (app) => {
 
             await company.save();
 
-             const createdAt = new Date().toLocaleString('en-US', {
+            const createdAt = new Date().toLocaleString('en-US', {
                 timeZone: 'America/Los_Angeles',
                 year: 'numeric',
                 month: '2-digit',
@@ -65,7 +65,7 @@ export default (app) => {
                 second: '2-digit',
             });
 
-            return res.send({ myuser: client, message:`Profile Saved ${createdAt}` });
+            return res.send({ myuser: client, message: `Profile Saved ${createdAt}` });
 
         } catch (err) {
             console.error("Upload error:", err);
@@ -251,6 +251,111 @@ export default (app) => {
             });
         }
     });
+
+    app.post('/geotech/:companyid/saveproject/:projectid', async (req, res) => {
+        try {
+            const { companyid, projectid } = req.params;
+            const { updatedProject } = req.body;
+
+            if (!updatedProject) {
+                return res.status(400).json({ error: "Missing updatedProject" });
+            }
+
+            // ensure projectid consistency
+            updatedProject.projectid = projectid;
+
+            // Update if exists
+            const result = await MyProjects.updateOne(
+                { companyid, "projects.projectid": projectid },
+                { $set: { "projects.$": updatedProject } }
+            );
+
+            // Insert if not found
+            if (result.matchedCount === 0) {
+                await MyProjects.updateOne(
+                    { companyid },
+                    { $push: { projects: updatedProject } },
+                    { upsert: true }
+                );
+            }
+
+            // 🔥 Fetch ONLY the saved project
+            const doc = await MyProjects.findOne(
+                { companyid, "projects.projectid": projectid },
+                { "projects.$": 1 } // returns only the matched project
+            );
+
+            const savedProject = doc?.projects?.[0] || null;
+
+            const createdAt = new Date().toLocaleString('en-US', {
+                timeZone: 'America/Los_Angeles',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+            });
+
+            return res.status(200).json({
+                message: `Project saved ${createdAt}`,
+                updatedproject: savedProject
+            });
+
+        } catch (err) {
+            console.error("Save project error:", err);
+            return res.status(500).json({
+                error: `Could not save project: ${err.message || err}`
+            });
+        }
+    });
+
+    app.post('/geotech/:companyid/saveprojects/:clientid', async (req, res) => {
+        try {
+            const { companyid, clientid } = req.params;
+            const { projects } = req.body;
+
+            // 1. Remove old projects for this client
+            await MyProjects.updateOne(
+                { companyid },
+                { $pull: { projects: { clientid } } }
+            );
+
+            // 2. Add updated projects
+            await MyProjects.updateOne(
+                { companyid },
+                { $push: { projects: { $each: projects } } },
+                { upsert: true }
+            );
+
+            // 3. Fetch updated document
+            const doc = await MyProjects.findOne({ companyid });
+
+            // 4. Return ONLY this client's projects
+            const clientProjects = doc?.projects.filter(
+                p => p.clientid === clientid
+            ) || [];
+
+            const createdAt = new Date().toLocaleString('en-US', {
+                timeZone: 'America/Los_Angeles',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+            });
+
+            const message = `Projects saved ${createdAt}`
+
+            res.json({ projects: clientProjects, message });
+
+        } catch (err) {
+            console.error(err);
+            res.status(500).send("Server error");
+        }
+
+    })
 
 
 

@@ -116,24 +116,13 @@ class Geotech {
                 throw new Error("Invalid client ID");
             }
 
-            // 2️⃣ Query for projects that match the clientID
-            const company = await MyProjects.findOne(
-                { "projects.clientid": clientID },
-                { "projects.$": 1 } // only return matched projects
-            );
+            const company = await MyProjects.findOne({ companyid: "gfk" });
 
-            // 3️⃣ Handle no projects found
-            if (!company || !company.projects.length) {
-                return [];
-            }
-
-            // 4️⃣ Return all matching projects
-            // If multiple projects per client, use $filter
-            const allProjects = company.projects.filter(
+            const allprojects = company?.projects.filter(
                 p => p.clientid === clientID
-            );
+            ) || [];
 
-            return allProjects;
+            return allprojects;
 
         } catch (err) {
             console.error("findProjectsByClientID error:", err);
