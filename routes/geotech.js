@@ -358,6 +358,46 @@ export default (app) => {
     })
 
 
+     app.get("/geotech/:projectid/loadproject", async (req, res) => {
+        try {
+          const { projectid } = req.params;
+          const gfk = new GFK();
+    
+          if (!projectid) {
+            return res.status(400).json({
+              success: false,
+              message: "Missing project ID in request parameters.",
+            });
+          }
+    
+          // Load borings and field reports in parallel
+          const [borings = []] = await Promise.all([
+            gfk.loadBorings(projectid).catch(() => [])
+  
+          ]);
+    
+          // Return response with projectid attached
+          return res.status(200).json({
+            success: true,
+            projectid,
+            borings,
+            hasData: borings.length > 0,
+            message:
+              borings.length === 0 
+                ? "No borings or field reports found for this project."
+                : undefined,
+          });
+        } catch (err) {
+          console.error("❌ Error loading project:", err);
+          return res.status(500).json({
+            success: false,
+            message: "Error: Could not load project data.",
+            error: err.message,
+          });
+        }
+      });
+
+
 
 
 
