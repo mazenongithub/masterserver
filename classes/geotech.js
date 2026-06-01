@@ -7,7 +7,6 @@ import GFK, { GFKCompany, MyProjects } from './gfk.js';
 
 
 
-
 const ContactSchema = new mongoose.Schema(
     {
         datein: {
@@ -108,6 +107,8 @@ class Geotech {
 
 
     }
+
+    
 
     async findProjectsByClientID(clientID) {
         try {

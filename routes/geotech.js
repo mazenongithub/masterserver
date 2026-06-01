@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from "crypto";
 import GFK, { GFKCompany, MyProjects } from '../classes/gfk.js';
+import validategeotechclient from '../middleware/validategeotechclient.js'
 export default (app) => {
 
     // Multer storage
@@ -218,7 +219,7 @@ export default (app) => {
     });
 
 
-    app.post('/geotech/saveprofile', async (req, res) => {
+    app.post('/geotech/saveprofile', validategeotechclient, async (req, res) => {
         const geotech = new Geotech();
 
 
@@ -358,44 +359,53 @@ export default (app) => {
     })
 
 
-     app.get("/geotech/:projectid/loadproject", async (req, res) => {
+    app.get("/geotech/:projectid/loadproject", async (req, res) => {
         try {
-          const { projectid } = req.params;
-          const gfk = new GFK();
-    
-          if (!projectid) {
-            return res.status(400).json({
-              success: false,
-              message: "Missing project ID in request parameters.",
+            const { projectid } = req.params;
+            const gfk = new GFK();
+
+            if (!projectid) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Missing project ID in request parameters.",
+                });
+            }
+
+            // Load borings and field reports in parallel
+            const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = [], timesheet = []] = await Promise.all([
+                gfk.loadBorings(projectid).catch(() => []),
+                gfk.loadFieldReports(projectid).catch(() => []),
+                gfk.loadCompactionCurves(projectid).catch(() => []),
+                gfk.loadSeismic(projectid).catch(() => []),
+                gfk.loadPTSlab(projectid).catch(() => []),
+                gfk.loadSlope(projectid).catch(() => []),
+                gfk.loadTimesheet(projectid).catch(() => [])
+
+            ]);
+
+            // Return response with projectid attached
+            return res.status(200).json({
+                success: true,
+                projectid,
+                borings,
+                fieldreports,
+                compactioncurves,
+                seismic,
+                ptslab,
+                slope,
+                timesheet,
+                hasData: borings.length > 0 || fieldreports.length > 0 || compactioncurves.length > 0 || seismic.length > 0 || ptslab.length > 0 || slope.length > 0 || timesheet.length > 0,
+
             });
-          }
-    
-          // Load borings and field reports in parallel
-          const [borings = []] = await Promise.all([
-            gfk.loadBorings(projectid).catch(() => [])
-  
-          ]);
-    
-          // Return response with projectid attached
-          return res.status(200).json({
-            success: true,
-            projectid,
-            borings,
-            hasData: borings.length > 0,
-            message:
-              borings.length === 0 
-                ? "No borings or field reports found for this project."
-                : undefined,
-          });
         } catch (err) {
-          console.error("❌ Error loading project:", err);
-          return res.status(500).json({
-            success: false,
-            message: "Error: Could not load project data.",
-            error: err.message,
-          });
+            console.error("❌ Error loading project:", err);
+            return res.status(500).json({
+                success: false,
+                message: "Error: Could not load project data.",
+                error: err.message,
+            });
         }
-      });
+    });
 
 
 
