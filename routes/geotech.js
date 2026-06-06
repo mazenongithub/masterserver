@@ -7,6 +7,7 @@ import fs from 'fs';
 import crypto from "crypto";
 import GFK, { GFKCompany, MyProjects } from '../classes/gfk.js';
 import validategeotechclient from '../middleware/validategeotechclient.js'
+import validateProfile from "../middleware/validateprofile.js";
 export default (app) => {
 
     // Multer storage
@@ -219,7 +220,7 @@ export default (app) => {
     });
 
 
-    app.post('/geotech/saveprofile', validategeotechclient, async (req, res) => {
+    app.post('/geotech/saveprofile', validateProfile, validategeotechclient, async (req, res) => {
         const geotech = new Geotech();
 
 
