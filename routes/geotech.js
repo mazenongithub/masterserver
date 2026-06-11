@@ -8,11 +8,16 @@ import crypto from "crypto";
 import GFK, { GFKCompany, MyProjects } from '../classes/gfk.js';
 import validategeotechclient from '../middleware/validategeotechclient.js'
 import validateProfile from "../middleware/validateprofile.js";
+import Stripe from "stripe";
+import { callbackPromise } from "nodemailer/lib/shared/index.js";
+
 export default (app) => {
 
     // Multer storage
     // Temporary upload folder
     const upload = multer({ dest: "uploads/temp" }); // multer saves to temp first
+
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
     app.post("/geotech/uploadprofilephoto", upload.single("profilephoto"), async (req, res) => {
         try {
@@ -219,6 +224,65 @@ export default (app) => {
         });
     });
 
+
+    app.get("/payments/status/:paymentIntentId", async (req, res) => {
+
+            try {
+
+                const { paymentIntentId } = req.params;
+
+                const paymentIntent =
+                    await stripe.paymentIntents.retrieve(
+                        paymentIntentId
+                    );
+
+                res.json({
+                    success: true,
+                    status: paymentIntent.status,
+                    amount: paymentIntent.amount,
+                    currency: paymentIntent.currency
+                });
+
+            } catch (error) {
+
+                console.error(error);
+
+                res.status(500).json({
+                    success: false,
+                    message: error.message
+                });
+
+            }
+
+        }
+    );
+
+    app.post("/geotech/:projectid/payments/:invoiceid/create-payment-intent", async (req, res) => {
+        try {
+            const geotech = new Geotech();
+            const { projectid, invoiceid } = req.params;
+            
+            const calc = await geotech.calculateInvoiceTotal(projectid, invoiceid)
+            const amount = (calc.total) * 100;
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount, // in cents (e.g. 5000 = $50)
+                currency: "usd",
+
+                // THIS enables cards + ACH automatically (important)
+                automatic_payment_methods: {
+                    enabled: true,
+                },
+            });
+
+            res.send({
+                clientSecret: paymentIntent.client_secret,
+            });
+
+        } catch (err) {
+            console.error(err);
+            res.status(500).send({ error: err.message });
+        }
+    });
 
     app.post('/geotech/saveprofile', validateProfile, validategeotechclient, async (req, res) => {
         const geotech = new Geotech();

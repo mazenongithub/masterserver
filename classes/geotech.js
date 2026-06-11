@@ -3,7 +3,7 @@ import transporter from '../functions/mailer.js';
 import path from 'path'
 import { fileURLToPath } from "url";
 import bcrypt from 'bcryptjs'
-import GFK, { GFKCompany, MyProjects } from './gfk.js';
+import GFK, { GFKCompany, MyProjects, TimeSheets } from './gfk.js';
 
 
 
@@ -91,6 +91,122 @@ const ContactSchema = new mongoose.Schema(
 const GeotechContactUs = mongoose.model("GeotechContactUs", ContactSchema);
 class Geotech {
 
+
+    async calculateInvoiceTotal(projectid, invoiceid) {
+
+        const calculateCost = (quantity, unitCost) => {
+            const qty = Number(quantity);
+            const cost = Number(unitCost);
+
+            if (isNaN(qty) || isNaN(cost)) return 0;
+
+            // round to hundredth
+            return Math.round(qty * cost * 100) / 100;
+        }
+
+
+        const calculateLaborCost = (timeIn, timeOut, laborRate) => {
+            const start = new Date(timeIn);
+            const end = new Date(timeOut);
+
+            const diffMs = end - start;                        // difference in milliseconds
+            const hours = diffMs / (1000 * 60 * 60);           // convert to hours
+            const roundedHours = Math.round(hours * 100) / 100; // round to hundredth
+
+            const totalCost = Math.round(roundedHours * laborRate * 100) / 100;
+
+            return totalCost;
+        }
+
+        try {
+
+            const project = await TimeSheets.findOne({
+                projectid
+            });
+
+            if (!project) {
+                throw new Error("Project not found.");
+            }
+
+            const invoice = project.invoices.find(
+                item => item.invoiceid === invoiceid
+            );
+
+            if (!invoice) {
+                throw new Error("Invoice not found.");
+            }
+
+            let entries = [];
+
+            // Labor Entries
+            invoice.labor.forEach(laborid => {
+
+                const labor = project.labor.find(
+                    item => item.laborid === laborid
+                );
+
+                if (labor) {
+
+                    entries.push({
+                        type: "labor",
+                        date: labor.timein,
+                        item: labor,
+                        amount: calculateLaborCost(labor.timein, labor.timeout, labor.laborrate)
+                    });
+                }
+            });
+
+            // Cost Entries
+            invoice.costs.forEach(costid => {
+
+                const cost = project.costs.find(
+                    item => item.costid === costid
+                );
+
+                if (cost) {
+
+                    entries.push({
+                        type: "cost",
+                        date: cost.datein,
+                        item: cost,
+                        amount: calculateCost(cost.quantity, cost.unitcost)
+                    });
+                }
+            });
+
+            // Chronological sort
+            entries.sort((a, b) =>
+                new Date(a.date) - new Date(b.date)
+            );
+
+            let runningTotal = 0;
+
+            const details = entries.map(entry => {
+
+                runningTotal += Number(entry.amount);
+
+                return {
+                    ...entry,
+                    runningTotal
+                };
+            });
+
+            return {
+                invoice,
+                entries: details,
+                total: runningTotal
+            };
+
+        } catch (error) {
+
+            console.log(error);
+
+            throw error;
+        }
+    }
+
+
+
     async insertContact(contact) {
 
         try {
@@ -108,7 +224,7 @@ class Geotech {
 
     }
 
-    
+
 
     async findProjectsByClientID(clientID) {
         try {

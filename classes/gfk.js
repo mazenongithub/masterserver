@@ -308,6 +308,10 @@ const TimeSheets = mongoose.model("timesheets", TimesheetSchema)
 
 class GFK {
 
+    async getInvoiceTotal(projectid, invoiceid) {
+
+    }
+
     async sendContactEmail(values) {
   let {
     emailaddress,
@@ -1190,4 +1194,4 @@ class GFK {
 }
 
 export default GFK;
-export { GFKCompany, MyProjects };       // named export
+export { GFKCompany, MyProjects, TimeSheets };       // named export

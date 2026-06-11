@@ -24,6 +24,7 @@
     "mysql2": "^3.15.3",
     "nodemailer": "^7.0.12",
     "nodemon": "^3.1.10",
+    "stripe": "^22.2.0",
     "xmlbuilder2": "^4.0.1"
   }
 }
