@@ -14,6 +14,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import https from 'https'
 import http from 'http'
+import Geotech from './classes/geotech.js';
+import Stripe from "stripe";
 
 // await testConnection()
 (async () => {
@@ -56,6 +58,7 @@ const dbUri = process.env.NODE_ENV === "production"
 
 const app = express();
 
+
 const port = process.env.PORT || 3000;
 
 
@@ -71,8 +74,8 @@ const allowedOrigins = [
   'https://appbaseddriver.civilengineer.io',
   'http://gfk.civilengineer.io',
   'https://gfk.civilengineer.io',
-   'https://geotech.civilengineer.io',
-   'http://geotech.civilengineer.io'
+  'https://geotech.civilengineer.io',
+  'http://geotech.civilengineer.io'
 ];
 
 app.use(cors({
@@ -99,10 +102,74 @@ const options = {
 };
 
 
-app.use(express.json({ limit: '50mb' }))
+
+
+
+
 app.use(sessionMiddleware);
 app.set("trust proxy", 1); // trust first proxy
 
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+ 
+  console.log("stripe signature", req.headers["stripe-signature"]);
+  const geotech = new Geotech();
+
+  const sig =
+    req.headers["stripe-signature"];
+
+  let event;
+
+  try {
+
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+   
+
+  } catch (err) {
+
+    console.log(err);
+
+    return res
+      .status(400)
+      .send(
+        `Webhook Error: ${err.message}`
+      );
+  }
+
+  switch (event.type) {
+
+    case "payment_intent.succeeded":
+    
+
+      await geotech.HandlePaymentSucceeded(
+        event.data.object
+      );
+
+      break;
+
+    case "payment_intent.payment_failed":
+
+      await geotech.HandlePaymentFailed(
+        event.data.object
+      );
+
+      break;
+
+    default:
+      console.log("Ignored event:", event.type);
+  }
+
+  res.json({ received: true });
+}
+);
+
+
+app.use(express.json({ limit: '50mb' }))
 
 
 

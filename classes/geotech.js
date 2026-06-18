@@ -205,6 +205,78 @@ class Geotech {
         }
     }
 
+    async HandlePaymentSucceeded(paymentIntent) {
+        const projectid = paymentIntent.metadata.projectid;
+        const invoiceid = paymentIntent.metadata.invoiceid;
+
+        if (!projectid || !invoiceid) {
+            throw new Error("Missing invoice metadata");
+        }
+
+        const timesheet = await TimeSheets.findOne({ projectid });
+
+        if (!timesheet) {
+            throw new Error(`Project not found: ${projectid}`);
+        }
+
+        const invoice = timesheet.invoices.find(
+            inv => inv.invoiceid === invoiceid
+        );
+
+        if (!invoice) {
+            throw new Error(`Invoice not found: ${invoiceid}`);
+        }
+
+        // Prevent duplicate webhook processing
+        if (invoice.transactionid) {
+            console.log(
+                `Invoice ${invoiceid} already paid. Skipping.`
+            );
+            return;
+        }
+
+        const amountPaid =
+            paymentIntent.amount_received / 100;
+
+        invoice.transactionid =
+            paymentIntent.id;
+
+        invoice.datepaid =
+            new Date();
+
+        invoice.status =
+            "paid";
+
+        timesheet.costs.push({
+            engineerid: "stripe",
+            costid: crypto.randomUUID(),
+            datein: new Date(),
+            unitcost: -amountPaid,
+            quantity: 1,
+            unit: "payment",
+            description:
+                `Stripe Payment ${paymentIntent.id}`
+        });
+
+        const paymentCost =
+            timesheet.costs[
+            timesheet.costs.length - 1
+            ];
+
+        invoice.costs.push(
+            paymentCost.costid
+        );
+
+        await timesheet.save();
+
+        console.log(
+            `Invoice ${invoiceid} marked paid`
+        );
+    }
+
+    async HandlePaymentFailed() {
+         console.log("handlepaymentfailed")
+    }
 
 
     async insertContact(contact) {

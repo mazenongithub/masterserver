@@ -225,9 +225,9 @@ const gfkSchema = new mongoose.Schema({
         zipcode: String,
         emailaddress: String,
         phonenumber: String,
-        apple:String,
-        google:String,
-        profileurl:String
+        apple: String,
+        google: String,
+        profileurl: String
 
     }]
 
@@ -269,7 +269,14 @@ const TimesheetSchema = new mongoose.Schema({
             dateinvoice: { type: Date, required: true }, // stored as UTC
             labor: [{ type: String }], // references labor.laborid
             costs: [{ type: String }],
-            transactionid: { type: String }  // references costs.costid
+            status: String,
+            transactionid: { type: String },
+            paymentstatus: {
+                type: String,
+                default: "Pending"
+            },
+
+            datepaid: Date  // references costs.costid
         }
     ]
 });
@@ -313,41 +320,41 @@ class GFK {
     }
 
     async sendContactEmail(values) {
-  let {
-    emailaddress,
-    fullname,
-    company,
-    phonenumber,
-    lab,
-    liquefaction,
-    logdraft,
-    field,
-    ptslab,
-    description,
-    slope,
-    reports,
-    invoice,
-    created
-  } = values;
+        let {
+            emailaddress,
+            fullname,
+            company,
+            phonenumber,
+            lab,
+            liquefaction,
+            logdraft,
+            field,
+            ptslab,
+            description,
+            slope,
+            reports,
+            invoice,
+            created
+        } = values;
 
-  created = new Date(created).toLocaleTimeString('en-US', {
-    timeZone: 'America/Los_Angeles'
-  });
+        created = new Date(created).toLocaleTimeString('en-US', {
+            timeZone: 'America/Los_Angeles'
+        });
 
-  const labModules = lab
-    ? `
+        const labModules = lab
+            ? `
       <li>Liquefaction Analysis: ${liquefaction ? 'Yes' : 'No'}</li>
       <li>PT Slab Design & Reporting: ${ptslab ? 'Yes' : 'No'}</li>
       <li>Geotechnical Log Drafting: ${logdraft ? 'Yes' : 'No'}</li>
     `
-    : `<li>Soil Lab Add-on Modules: N/A</li>`;
+            : `<li>Soil Lab Add-on Modules: N/A</li>`;
 
-  await transporter.sendMail({
-    from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
-    to: 'mazen@civilengineer.io',
-    replyTo: emailaddress,
-    subject: 'New Service Request Submission',
-    html: `
+        await transporter.sendMail({
+            from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
+            to: 'mazen@civilengineer.io',
+            replyTo: emailaddress,
+            subject: 'New Service Request Submission',
+            html: `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #333;">
         <h2>New Service Request</h2>
 
@@ -378,8 +385,8 @@ class GFK {
         </p>
       </div>
     `
-  });
-}
+        });
+    }
 
 
     async sendClientEmail(values) {
@@ -389,13 +396,13 @@ class GFK {
             timeZone: 'America/Los_Angeles'
         });
 
-         const labModules = lab
-    ? `
+        const labModules = lab
+            ? `
       <li>Liquefaction Analysis: ${liquefaction ? 'Yes' : 'No'}</li>
       <li>PT Slab Design & Reporting: ${ptslab ? 'Yes' : 'No'}</li>
       <li>Geotechnical Log Drafting: ${logdraft ? 'Yes' : 'No'}</li>
     `
-    : `<li>Soil Lab Add-on Modules: N/A</li>`;
+            : `<li>Soil Lab Add-on Modules: N/A</li>`;
 
         await transporter.sendMail({
             from: `"CivilEngineer.io" <mazen@civilengineer.io>`,

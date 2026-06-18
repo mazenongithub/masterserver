@@ -9,7 +9,7 @@ import GFK, { GFKCompany, MyProjects } from '../classes/gfk.js';
 import validategeotechclient from '../middleware/validategeotechclient.js'
 import validateProfile from "../middleware/validateprofile.js";
 import Stripe from "stripe";
-import { callbackPromise } from "nodemailer/lib/shared/index.js";
+import express from 'express';
 
 export default (app) => {
 
@@ -225,45 +225,59 @@ export default (app) => {
     });
 
 
+
+
+
+
     app.get("/payments/status/:paymentIntentId", async (req, res) => {
 
-            try {
+        try {
 
-                const { paymentIntentId } = req.params;
+            const { paymentIntentId } = req.params;
 
-                const paymentIntent =
-                    await stripe.paymentIntents.retrieve(
-                        paymentIntentId
-                    );
+            const paymentIntent =
+                await stripe.paymentIntents.retrieve(
+                    paymentIntentId
+                );
 
-                res.json({
-                    success: true,
-                    status: paymentIntent.status,
-                    amount: paymentIntent.amount,
-                    currency: paymentIntent.currency
-                });
 
-            } catch (error) {
 
-                console.error(error);
+            res.json({
+                success: true,
+                status: paymentIntent.status,
+                amount: paymentIntent.amount,
+                currency: paymentIntent.currency,
+                nextAction: paymentIntent.next_action
+            });
 
-                res.status(500).json({
-                    success: false,
-                    message: error.message
-                });
+        } catch (error) {
 
-            }
+            console.error(error);
+
+            res.status(500).json({
+                success: false,
+                message: error.message
+            });
 
         }
+
+    }
     );
 
-    app.post("/geotech/:projectid/payments/:invoiceid/create-payment-intent", async (req, res) => {
+    app.get("/geotech/:projectid/payments/:invoiceid/create-payment-intent", async (req, res) => {
         try {
             const geotech = new Geotech();
             const { projectid, invoiceid } = req.params;
-            
+
             const calc = await geotech.calculateInvoiceTotal(projectid, invoiceid)
             const amount = (calc.total) * 100;
+
+            if (amount <= 0) {
+                throw new Error(
+                    "Invoice has already been paid."
+                );
+            }
+
             const paymentIntent = await stripe.paymentIntents.create({
                 amount, // in cents (e.g. 5000 = $50)
                 currency: "usd",
@@ -272,6 +286,11 @@ export default (app) => {
                 automatic_payment_methods: {
                     enabled: true,
                 },
+
+                metadata: {
+                    projectid,
+                    invoiceid
+                }
             });
 
             res.send({
