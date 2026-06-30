@@ -641,6 +641,46 @@ export default (app) => {
   });
 
 
+   app.post('/gfk/saveschedule', checkSessionGFK, async (req, res) => {
+    try {
+      const gfk = new GFK();
+      const { projectid, schedule } = req.body;
+
+      if (!projectid) {
+        return res.status(400).json({ message: "Project ID is required." });
+      }
+
+      if (!schedule ||
+        !Array.isArray(schedule.labor) ||
+        !Array.isArray(schedule.costs) ||
+        !Array.isArray(schedule.proposals)) {
+        return res.status(400).json({ message: "All schedule properties (labor, costs, invoices) must be arrays." });
+      }
+
+      // Save schedule
+      const updatedSchedule = await gfk.saveSchedule({ projectid, ...schedule });
+
+      if (!updatedSchedule) {
+        return res.status(500).json({ message: "Error: Schedule could not be saved." });
+      }
+
+      const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+
+      return res.status(200).json({
+        message: `Schedule Saved Successfully - ${timestamp}`,
+        schedule: updatedSchedule
+      });
+
+    } catch (err) {
+      console.error("Error saving schedule:", err);
+      return res.status(500).json({
+        message: `Error saving schedule: ${err.message}`
+      });
+    }
+  });
+
+
+
 
 
 
@@ -663,14 +703,15 @@ export default (app) => {
       }
 
       // Load borings and field reports in parallel
-      const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = [], timesheet = []] = await Promise.all([
+      const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = [], timesheet = [], schedule = []] = await Promise.all([
         gfk.loadBorings(projectid).catch(() => []),
         gfk.loadFieldReports(projectid).catch(() => []),
         gfk.loadCompactionCurves(projectid).catch(() => []),
         gfk.loadSeismic(projectid).catch(() => []),
         gfk.loadPTSlab(projectid).catch(() => []),
         gfk.loadSlope(projectid).catch(() => []),
-        gfk.loadTimesheet(projectid).catch(() => [])
+        gfk.loadTimesheet(projectid).catch(() => []),
+        gfk.loadSchedule(projectid).catch(() => [])
 
       ]);
 
@@ -685,6 +726,7 @@ export default (app) => {
         ptslab,
         slope,
         timesheet,
+        schedule,
         hasData: borings.length > 0 || fieldreports.length > 0,
         message:
           borings.length === 0 && fieldreports.length === 0

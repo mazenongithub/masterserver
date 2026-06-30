@@ -281,6 +281,83 @@ const TimesheetSchema = new mongoose.Schema({
     ]
 });
 
+const ScheduleSchema = new mongoose.Schema({
+    projectid: {
+        type: String,
+        required: true,
+        index: true
+    },
+
+    labor: [
+        {
+            engineerid: { type: String, required: true },
+            laborid: { type: String, required: true },
+            timein: { type: Date, required: true },
+            timeout: { type: Date, required: true },
+            laborrate: { type: Number, required: true },
+            description: String
+        }
+    ],
+
+    costs: [
+        {
+            engineerid: { type: String },
+            costid: { type: String, required: true },
+            datein: { type: Date, required: true },
+            unitcost: { type: Number, required: true },
+            unit: { type: String, default: "each" },
+            quantity: { type: Number, default: 1 },
+            description: String
+        }
+    ],
+
+    proposals: [
+        {
+            proposalid: {
+                type: String,
+                required: true
+            },
+
+            version: {
+                type: Number,
+                default: 1
+            },
+
+            dateproposal: {
+                type: Date,
+                required: true
+            },
+
+            expirationdate: Date,
+
+            labor: [{ type: String }], // references labor.laborid
+
+            costs: [{ type: String }], // references costs.costid
+
+            status: {
+                type: String,
+                enum: [
+                    "Draft",
+                    "Pending",
+                    "Approved",
+                    "Rejected",
+                    "Expired"
+                ],
+                default: "Draft"
+            },
+
+            dateapproved: Date,
+
+            approvedby: {
+                type: String
+            },
+
+            comments: String,
+
+            proposalnumber: String
+        }
+    ]
+});
 
 const contactSchema = new mongoose.Schema({
     company: String,
@@ -311,6 +388,8 @@ const Slopes = mongoose.model("slopes", slopeSchema)
 const MyEngineer = mongoose.model("engineers", EngineerSchema)
 const GFKCompany = mongoose.model("GFKCompany", gfkSchema, "gfkcompany")
 const TimeSheets = mongoose.model("timesheets", TimesheetSchema)
+const Schedules = mongoose.model("schedules", ScheduleSchema)
+
 
 
 class GFK {
@@ -967,6 +1046,77 @@ class GFK {
             };
         }
     }
+
+
+    async loadSchedule(projectid) {
+    try {
+        if (!projectid) {
+            throw new Error("Project ID is required to load a schedule.");
+        }
+
+        const scheduleDoc = await Schedules.findOne(
+            { projectid },
+            { projectid: 0, _id: 0 }
+        ).lean();
+
+        return {
+            error: false,
+            labor: scheduleDoc?.labor || [],
+            costs: scheduleDoc?.costs || [],
+            proposals: scheduleDoc?.proposals || []
+        };
+
+    } catch (err) {
+        console.error("Error loading schedule:", err);
+
+        return {
+            error: true,
+            message: `Could not load schedule: ${err.message}`,
+            labor: [],
+            costs: [],
+            proposals: []
+        };
+    }
+}
+
+
+ async saveSchedule(mySchedule) {
+        try {
+            if (!mySchedule?.projectid) {
+                throw new Error("Project ID is required to save a timesheet.");
+            }
+
+            const filter = { projectid: mySchedule.projectid };
+            const options = {
+                new: true,    // return the updated document
+                upsert: true, // create if not found
+            };
+
+            const update = {
+                $set: {
+                    labor: Array.isArray(mySchedule.labor) ? mySchedule.labor : [],
+                    costs: Array.isArray(mySchedule.costs) ? mySchedule.costs : [],
+                    proposals: Array.isArray(mySchedule.proposals) ? mySchedule.proposals : []
+                }
+            };
+
+            const updatedSchedule = await Schedules.findOneAndUpdate(filter, update, options);
+
+            // Return only labor, costs, proposals
+            return {
+                labor: updatedSchedule?.labor || [],
+                costs: updatedSchedule?.costs || [],
+                proposals: updatedSchedule?.proposals || []
+            };
+
+        } catch (err) {
+            console.error('Error saving timesheet:', err);
+            return {
+                message: `Error: Could not save timesheet - ${err.message}`
+            };
+        }
+    }
+
 
 
 
