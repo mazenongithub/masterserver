@@ -355,9 +355,12 @@ const ScheduleSchema = new mongoose.Schema({
             comments: String,
 
             proposalnumber: String
+            
         }
     ]
 });
+
+
 
 const contactSchema = new mongoose.Schema({
     company: String,
@@ -1351,4 +1354,4 @@ class GFK {
 }
 
 export default GFK;
-export { GFKCompany, MyProjects, TimeSheets };       // named export
+export { GFKCompany, MyProjects, TimeSheets, Schedules };       // named export

@@ -5,7 +5,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from "crypto";
-import GFK, { GFKCompany, MyProjects } from '../classes/gfk.js';
+import GFK, { GFKCompany, MyProjects, Schedules } from '../classes/gfk.js';
 import validategeotechclient from '../middleware/validategeotechclient.js'
 import validateProfile from "../middleware/validateprofile.js";
 import Stripe from "stripe";
@@ -442,6 +442,61 @@ export default (app) => {
 
     })
 
+    app.post('/geotech/:projectid/approveproposal/:proposalid', async (req, res) => {
+
+        try {
+
+            const { projectid, proposalid } = req.params;
+            const proposalUpdate = req.body;
+
+            const schedule = await Schedules.findOne({ projectid });
+
+            if (!schedule) {
+                return res.status(404).json({
+                    error: true,
+                    message: "Schedule not found."
+                });
+            }
+
+            const proposal = schedule.proposals.find(
+                p => p.proposalid === proposalid
+            );
+
+            if (!proposal) {
+                return res.status(404).json({
+                    error: true,
+                    message: "Proposal not found."
+                });
+            }
+
+            // Merge updated values into the proposal
+            Object.assign(proposal, proposalUpdate);
+
+            await schedule.save();
+
+            // Return the updated proposal from MongoDB
+            const updatedProposal = schedule.proposals.find(
+                p => p.proposalid === proposalid
+            );
+
+            res.json({
+                error: false,
+                proposal: updatedProposal
+            });
+
+        } catch (err) {
+
+            console.error(err);
+
+            res.status(500).json({
+                error: true,
+                message: err.message
+            });
+
+        }
+
+    });
+
 
     app.get("/geotech/:projectid/loadproject", async (req, res) => {
         try {
@@ -456,14 +511,15 @@ export default (app) => {
             }
 
             // Load borings and field reports in parallel
-            const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = [], timesheet = []] = await Promise.all([
+            const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = [], timesheet = [], schedule = []] = await Promise.all([
                 gfk.loadBorings(projectid).catch(() => []),
                 gfk.loadFieldReports(projectid).catch(() => []),
                 gfk.loadCompactionCurves(projectid).catch(() => []),
                 gfk.loadSeismic(projectid).catch(() => []),
                 gfk.loadPTSlab(projectid).catch(() => []),
                 gfk.loadSlope(projectid).catch(() => []),
-                gfk.loadTimesheet(projectid).catch(() => [])
+                gfk.loadTimesheet(projectid).catch(() => []),
+                gfk.loadSchedule(projectid).catch(() => [])
 
             ]);
 
@@ -478,6 +534,7 @@ export default (app) => {
                 ptslab,
                 slope,
                 timesheet,
+                schedule,
                 hasData: borings.length > 0 || fieldreports.length > 0 || compactioncurves.length > 0 || seismic.length > 0 || ptslab.length > 0 || slope.length > 0 || timesheet.length > 0,
 
             });
