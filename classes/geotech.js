@@ -4,6 +4,7 @@ import path from 'path'
 import { fileURLToPath } from "url";
 import bcrypt from 'bcryptjs'
 import GFK, { GFKCompany, MyProjects, TimeSheets } from './gfk.js';
+import Notifications from './notifications.js';
 
 
 
@@ -275,7 +276,7 @@ class Geotech {
     }
 
     async HandlePaymentFailed() {
-         console.log("handlepaymentfailed")
+        console.log("handlepaymentfailed")
     }
 
 
@@ -616,13 +617,19 @@ class Geotech {
             };
 
             // Check duplicates
-            const existing = await GFKCompany.findOne({
-                company: "gfk",
-                $or: [
-                    { "clients.apple": appleHash },
-                    { "clients.google": googleHash }
-                ]
-            });
+            let existing;
+
+            if (values.apple) {
+                existing = await GFKCompany.findOne({
+                    company: "gfk",
+                    "clients.apple": appleHash
+                });
+            } else if (values.google) {
+                existing = await GFKCompany.findOne({
+                    company: "gfk",
+                    "clients.google": googleHash
+                });
+            }
 
             if (existing) {
                 throw new Error("Client already exists");
@@ -641,6 +648,8 @@ class Geotech {
 
             // Get the last inserted client (Mongo just added it)
             const client = result.clients[result.clients.length - 1];
+            const notification = new Notifications();
+            await notification.sendRegistrationEmail(client)
 
             return { client };
 
@@ -650,6 +659,10 @@ class Geotech {
                 message: `Error: Could not register client - ${err.message}`
             };
         }
+    }
+
+    async sendRegisterEmail() {
+        transporter
     }
 
     async saveProfile(values) {

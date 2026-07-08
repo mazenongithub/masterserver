@@ -10,6 +10,8 @@ import validategeotechclient from '../middleware/validategeotechclient.js'
 import validateProfile from "../middleware/validateprofile.js";
 import Stripe from "stripe";
 import express from 'express';
+import compareProjects from "../middleware/compareprojects.js";
+import Notifications from "../classes/notifications.js";
 
 export default (app) => {
 
@@ -226,9 +228,6 @@ export default (app) => {
 
 
 
-
-
-
     app.get("/payments/status/:paymentIntentId", async (req, res) => {
 
         try {
@@ -395,7 +394,7 @@ export default (app) => {
         }
     });
 
-    app.post('/geotech/:companyid/saveprojects/:clientid', async (req, res) => {
+    app.post('/geotech/:companyid/saveprojects/:clientid', compareProjects, async (req, res) => {
         try {
             const { companyid, clientid } = req.params;
             const { projects } = req.body;
@@ -432,6 +431,22 @@ export default (app) => {
             });
 
             const message = `Projects saved ${createdAt}`
+           
+
+            if (
+                req.projectChanges.created.length ||
+                req.projectChanges.updated.length ||
+                req.projectChanges.deleted.length
+            ) {
+                const notification = new Notifications();
+                const { client, created, updated, deleted } = req.projectChanges;
+                await notification.sendProjectChangeNotification(
+                    client, created, updated, deleted
+                );
+            }
+
+
+
 
             res.json({ projects: clientProjects, message });
 
