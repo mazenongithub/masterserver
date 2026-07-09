@@ -64,6 +64,41 @@ class Notifications {
 
     }
 
+    async sendProjectUpdatedEmail(client, project) {
+      
+        let html = (project) => {
+
+            return (`<div><div style="margin-bottom:10px;align-content:center; text-align: center; font-family:Tahoma, Arial, Helvetica, sans-serif;">
+		<span style="font-size:18px">${client.firstname} ${client.lastname} has updated project ${project.title}</span>
+	</div>
+	<div style="margin-bottom:10px; font-family:Tahoma, Arial, Helvetica, sans-serif;">
+		<span style="font-size:16x">The following project have been updated:</span>
+	</div>
+		<div style="margin-bottom:10px; font-family:Tahoma, Arial, Helvetica, sans-serif;">
+		<span style="font-size:16x">${project.title} </span>
+	</div>
+	<div style="margin-bottom:10px; font-family:Tahoma, Arial, Helvetica, sans-serif;">
+		<span style="font-size:16x">${project.projectaddress} ${project.projectcity} </span>
+	</div>
+	<div style="margin-bottom:10px; font-family:Tahoma, Arial, Helvetica, sans-serif;">
+		<span style="font-size:16x">${project.projectnumber} </span>
+	</div>
+	<div style="margin-bottom:10px; font-family:Tahoma, Arial, Helvetica, sans-serif;">
+		<span style="font-size:16x">${project.sow} </span>
+	</div></div>`)
+
+        }
+
+            await transporter.sendMail({
+            from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
+            to: 'mazen@civilengineer.io',
+            subject: `${client.firstname} ${client.lastname} has updated project ${project.title}</span>
+`,
+            html: html(project)
+
+        })
+    }
+
 
     async sendProjectChangeNotification(client, created, updated, deleted) {
         let html = ''
@@ -86,7 +121,7 @@ class Notifications {
         }
 
 
-            if (updated.length > 0) {
+        if (updated.length > 0) {
             updated.forEach(project => {
 
                 html += `<div><div style="margin-bottom:10px; font-family:Tahoma, Arial, Helvetica, sans-serif;">
@@ -108,7 +143,7 @@ class Notifications {
         }
 
 
-                if (deleted.length > 0) {
+        if (deleted.length > 0) {
             deleted.forEach(project => {
 
                 html += `<div><div style="margin-bottom:10px; font-family:Tahoma, Arial, Helvetica, sans-serif;">

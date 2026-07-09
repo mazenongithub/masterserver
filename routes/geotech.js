@@ -11,6 +11,7 @@ import validateProfile from "../middleware/validateprofile.js";
 import Stripe from "stripe";
 import express from 'express';
 import compareProjects from "../middleware/compareprojects.js";
+import compareProject from "../middleware/compareproject.js";
 import Notifications from "../classes/notifications.js";
 
 export default (app) => {
@@ -336,7 +337,7 @@ export default (app) => {
         }
     });
 
-    app.post('/geotech/:companyid/saveproject/:projectid', async (req, res) => {
+    app.post('/geotech/:companyid/saveproject/:projectid', compareProject, async (req, res) => {
         try {
             const { companyid, projectid } = req.params;
             const { updatedProject } = req.body;
@@ -381,9 +382,24 @@ export default (app) => {
                 second: '2-digit',
             });
 
+            if (req.projectChanges.hasChanges) {
+                const notification = new Notifications();
+
+                await notification.sendProjectUpdatedEmail(
+                    req.projectChanges.client,
+                    savedProject
+                );
+            }
+
             return res.status(200).json({
                 message: `Project saved ${createdAt}`,
-                updatedproject: savedProject
+                updatedproject: {
+                    title: savedProject.title,
+                    sow: savedProject.sow,
+                    projectcity: savedProject.projectcity,
+                    projectaddress: savedProject.projectaddress,
+                    projectapn: savedProject.projectapn
+                }
             });
 
         } catch (err) {
@@ -431,7 +447,7 @@ export default (app) => {
             });
 
             const message = `Projects saved ${createdAt}`
-           
+
 
             if (
                 req.projectChanges.created.length ||
