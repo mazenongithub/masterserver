@@ -342,6 +342,7 @@ export default (app) => {
             const { companyid, projectid } = req.params;
             const { updatedProject } = req.body;
 
+
             if (!updatedProject) {
                 return res.status(400).json({ error: "Missing updatedProject" });
             }
@@ -409,32 +410,113 @@ export default (app) => {
             });
         }
     });
-
     app.post('/geotech/:companyid/saveprojects/:clientid', compareProjects, async (req, res) => {
         try {
             const { companyid, clientid } = req.params;
             const { projects } = req.body;
 
-            // 1. Remove old projects for this client
-            await MyProjects.updateOne(
-                { companyid },
-                { $pull: { projects: { clientid } } }
-            );
+            const {
+                created,
+                deleted
+            } = req.projectChanges;
 
-            // 2. Add updated projects
-            await MyProjects.updateOne(
-                { companyid },
-                { $push: { projects: { $each: projects } } },
-                { upsert: true }
-            );
 
-            // 3. Fetch updated document
+            // 1. Delete removed projects
+            if (deleted.length > 0) {
+
+                const deletedIds = deleted.map(
+                    project => project.projectid
+                );
+
+                await MyProjects.updateOne(
+                    { companyid },
+                    {
+                        $pull: {
+                            projects: {
+                                projectid: { $in: deletedIds }
+                            }
+                        }
+                    }
+                );
+            }
+
+
+            // 2. Update existing projects
+            for (const project of projects) {
+
+                await MyProjects.updateOne(
+                    {
+                        companyid,
+                        "projects.projectid": project.projectid
+                    },
+                    {
+                        $set: {
+                            "projects.$.title": project.title,
+                            "projects.$.sow": project.sow,
+                            "projects.$.clientid": project.clientid,
+                            "projects.$.projectaddress": project.projectaddress,
+                            "projects.$.projectcity": project.projectcity,
+                            "projects.$.projectapn": project.projectapn
+                        }
+                    }
+                );
+
+            }
+
+
+            // 3. Add new projects
+            if (created.length > 0) {
+
+                await MyProjects.updateOne(
+                    { companyid },
+                    {
+                        $push: {
+                            projects: {
+                                $each: created
+                            }
+                        }
+                    },
+                    {
+                        upsert: true
+                    }
+                );
+
+            }
+
+
+            // 4. Get updated projects
             const doc = await MyProjects.findOne({ companyid });
 
-            // 4. Return ONLY this client's projects
-            const clientProjects = doc?.projects.filter(
-                p => p.clientid === clientid
-            ) || [];
+            const clientProjects = doc?.projects
+                .filter(p => p.clientid === clientid)
+                .map(p => ({
+                    projectid: p.projectid,
+                    title: p.title,
+                    sow: p.sow,
+                    clientid: p.clientid,
+                    projectaddress: p.projectaddress,
+                    projectcity: p.projectcity,
+                    projectapn: p.projectapn
+                })) || [];
+
+
+            // 5. Send notification
+            if (
+                created.length ||
+                req.projectChanges.updated.length ||
+                deleted.length
+            ) {
+
+                const notification = new Notifications();
+
+                await notification.sendProjectChangeNotification(
+                    req.projectChanges.client,
+                    created,
+                    req.projectChanges.updated,
+                    deleted
+                );
+            }
+
 
             const createdAt = new Date().toLocaleString('en-US', {
                 timeZone: 'America/Los_Angeles',
@@ -446,32 +528,18 @@ export default (app) => {
                 second: '2-digit',
             });
 
-            const message = `Projects saved ${createdAt}`
 
+            res.json({
+                projects: clientProjects,
+                message: `Projects saved ${createdAt}`
+            });
 
-            if (
-                req.projectChanges.created.length ||
-                req.projectChanges.updated.length ||
-                req.projectChanges.deleted.length
-            ) {
-                const notification = new Notifications();
-                const { client, created, updated, deleted } = req.projectChanges;
-                await notification.sendProjectChangeNotification(
-                    client, created, updated, deleted
-                );
-            }
-
-
-
-
-            res.json({ projects: clientProjects, message });
 
         } catch (err) {
             console.error(err);
             res.status(500).send("Server error");
         }
-
-    })
+    });
 
     app.post('/geotech/:projectid/approveproposal/:proposalid', async (req, res) => {
 

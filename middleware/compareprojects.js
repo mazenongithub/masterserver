@@ -1,10 +1,11 @@
-import GFK, { GFKCompany, MyProjects, Schedules } from '../classes/gfk.js';
+import GFK, { GFKCompany, MyProjects } from '../classes/gfk.js';
 
 
 async function  compareProjects (req, res, next) {
     try {
         const { companyid, clientid } = req.params;
         const { projects = [] } = req.body;
+    
 
         const doc = await MyProjects.findOne({ companyid });
 
