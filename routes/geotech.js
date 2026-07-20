@@ -546,6 +546,7 @@ export default (app) => {
         try {
 
             const { projectid, proposalid } = req.params;
+            const clientid = req.session.clientID
             const proposalUpdate = req.body;
 
             const schedule = await Schedules.findOne({ projectid });
@@ -577,6 +578,10 @@ export default (app) => {
             const updatedProposal = schedule.proposals.find(
                 p => p.proposalid === proposalid
             );
+
+            const notification = new Notifications();
+
+            await notification.proposalEmail(clientid, projectid, proposalid)
 
             res.json({
                 error: false,

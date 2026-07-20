@@ -1,7 +1,199 @@
 import transporter from '../functions/mailer.js';
+import GFK from './gfk.js';
+import Geotech from './geotech.js';
+import geotech from '../routes/geotech.js';
 class Notifications {
 
+    async proposalEmail(clientid, projectid, proposalid) {
+        const gfk = new GFK();
+        const geotech = new Geotech();
 
+        try {
+
+            const [client, project, proposal] = await Promise.all([
+                geotech.findClientByID(clientid),
+                gfk.getProjectById(projectid),
+                gfk.getProposal(projectid, proposalid)
+            ]);
+
+            const formatDate = (date) =>
+                new Date(date).toLocaleDateString("en-US", {
+                    timeZone: "America/Los_Angeles",
+                    month: "2-digit",
+                    day: "2-digit",
+                    year: "numeric"
+                });
+
+            const formatMoney = (value) =>
+                Number(value).toLocaleString("en-US", {
+                    style: "currency",
+                    currency: "USD"
+                });
+
+            const formatDateTime = (date) =>
+                new Date(date).toLocaleString("en-US", {
+                    timeZone: "America/Los_Angeles",
+                    month: "2-digit",
+                    day: "2-digit",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                    hour12: true
+                });
+
+            const approvedBy = `${client.firstname} ${client.lastname}`;
+
+            const proposalRows = proposal.items.map(item => {
+
+                let date;
+                let quantity;
+                let amount;
+
+                if (item.type === "labor") {
+
+                    const totalHours =
+                        (new Date(item.timeout) - new Date(item.timein)) /
+                        (1000 * 60 * 60);
+
+                    date = formatDate(item.timein);
+
+                    quantity = `${totalHours.toFixed(2)} hrs @ ${formatMoney(item.laborrate)}/hr`;
+
+                    amount = totalHours * item.laborrate;
+
+                } else {
+
+                    date = formatDate(item.datein);
+
+                    quantity = `${item.quantity} ${item.unit} @ ${formatMoney(item.unitcost)}/${item.unit}`;
+
+                    amount = item.quantity * item.unitcost;
+
+                }
+
+
+
+                const dateApproved = proposal.dateapproved
+                    ? formatDate(proposal.dateapproved)
+                    : formatDate(new Date());
+
+                return `
+                <tr style="font-family:Tahoma, Arial, Helvetica, sans-serif;font-size:16px">
+                    <td width="17%">${date}</td>
+                    <td width="52%" colspan="3">${item.description || ""}</td>
+                    <td width="18%">${quantity}</td>
+                    <td width="13%" align="right">${formatMoney(amount)}</td>
+                </tr>
+            `;
+
+            }).join("");
+
+            const html = `
+<div>
+
+    <div style="margin-bottom:10px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <span style="font-size:16px">${client.firstname} ${client.lastname}</span>
+    </div>
+
+    <div style="margin-bottom:10px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <span style="font-size:16px">${client.address}</span>
+    </div>
+
+    <div style="margin-bottom:30px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <span style="font-size:16px">
+            ${client.city}, ${client.contactstate} ${client.zipcode}
+        </span>
+    </div>
+
+    <div style="margin-bottom:10px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <span style="font-size:16px">
+            <strong>Project Number:</strong> ${project.projectnumber || ""}
+        </span>
+    </div>
+
+    <div style="margin-bottom:10px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <span style="font-size:16px">${project.title}</span>
+    </div>
+
+    <div style="margin-bottom:10px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <span style="font-size:16px">${project.projectaddress}</span>
+    </div>
+
+    <div style="margin-bottom:30px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <span style="font-size:16px">${project.projectcity}</span>
+    </div>
+
+    <div style="margin-bottom:10px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <span style="font-size:16px">
+            <strong>Proposal Date:</strong> ${formatDate(proposal.dateproposal)}
+        </span>
+    </div>
+
+    <div style="margin-bottom:20px;text-align:center;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <span style="font-size:20px"><strong>Proposed Schedule</strong></span>
+    </div>
+
+    <table width="100%" border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;">
+
+        <thead>
+            <tr style="font-family:Tahoma, Arial, Helvetica, sans-serif;font-size:16px;font-weight:bold;">
+                <th width="17%">Date</th>
+                <th width="52%" colspan="3">Description</th>
+                <th width="18%">Quantity</th>
+                <th width="13%">Amount</th>
+            </tr>
+        </thead>
+
+        <tbody>
+
+            ${proposalRows}
+
+            <tr style="font-family:Tahoma, Arial, Helvetica, sans-serif;font-size:16px;font-weight:bold;">
+                <td colspan="5" align="right">Total</td>
+                <td align="right">${formatMoney(proposal.totalAmount)}</td>
+            </tr>
+
+        </tbody>
+
+    </table>
+
+    <table width="100%" cellpadding="5" cellspacing="0" style="margin-top:30px;">
+    <tr style="font-family:Tahoma, Arial, Helvetica, sans-serif;font-size:16px;">
+        <td width="50%" align="center">
+            <strong>Approved By</strong><br>
+            ${approvedBy}
+        </td>
+
+        <td width="50%" align="center">
+            <strong>Date Approved</strong><br>
+            ${formatDateTime(proposal.dateapproved)}
+        </td>
+    </tr>
+</table>
+
+</div>
+`;
+
+            await transporter.sendMail({
+                from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
+                to: "mazen@civilengineer.io",
+                subject: `${project.title} - Proposal`,
+                html
+            });
+
+             await transporter.sendMail({
+                from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
+                to: `${client.emailaddress}`,
+                subject: `${project.title} - Proposal`,
+                html
+            });
+
+
+        } catch (err) {
+            console.error("Error sending proposal email:", err);
+        }
+    }
 
     async sendRegistrationEmail(myuser) {
 
@@ -65,7 +257,7 @@ class Notifications {
     }
 
     async sendProjectUpdatedEmail(client, project) {
-      
+
         let html = (project) => {
 
             return (`<div><div style="margin-bottom:10px;align-content:center; text-align: center; font-family:Tahoma, Arial, Helvetica, sans-serif;">
@@ -89,7 +281,7 @@ class Notifications {
 
         }
 
-            await transporter.sendMail({
+        await transporter.sendMail({
             from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
             to: 'mazen@civilengineer.io',
             subject: `${client.firstname} ${client.lastname} has updated project ${project.title}</span>

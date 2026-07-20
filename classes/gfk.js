@@ -357,7 +357,7 @@ const ScheduleSchema = new mongoose.Schema({
             comments: String,
 
             proposalnumber: String
-            
+
         }
     ]
 });
@@ -731,6 +731,32 @@ class GFK {
         }
     }
 
+    async findClientByID(client_id) {
+        try {
+
+            const clientDoc = await GFKCompany.findOne(
+                {
+                    company: "gfk",
+                    "clients._id": client_id
+                },
+                {
+                    "clients.$": 1
+                }
+            );
+
+            return clientDoc?.clients?.[0] || null;
+
+        } catch (err) {
+            console.error("Error: Could not find client", err);
+            return {
+                message: `Error: Could not find client - ${err.message}`
+            };
+        }
+    }
+
+
+    
+
 
 
 
@@ -1052,40 +1078,126 @@ class GFK {
         }
     }
 
-
-    async loadSchedule(projectid) {
+    async getProposal(projectid, proposalid) {
     try {
-        if (!projectid) {
-            throw new Error("Project ID is required to load a schedule.");
-        }
 
-        const scheduleDoc = await Schedules.findOne(
+        const schedule = await Schedules.findOne(
             { projectid },
-            { projectid: 0, _id: 0 }
+            {
+                proposals: 1,
+                labor: 1,
+                costs: 1
+            }
         ).lean();
 
+        if (!schedule) {
+            throw new Error("Schedule not found");
+        }
+
+        const proposal = schedule.proposals.find(
+            p => p.proposalid === proposalid
+        );
+
+        if (!proposal) {
+            throw new Error("Proposal not found");
+        }
+
+        // Proposal labor
+        const labor = schedule.labor
+            .filter(l => proposal.labor.includes(l.laborid))
+            .map(l => {
+
+                const hours =
+                    (new Date(l.timeout) - new Date(l.timein)) /
+                    (1000 * 60 * 60);
+
+                return {
+                    type: "labor",
+                    date: l.timein,
+                    amount: hours * l.laborrate,
+                    ...l
+                };
+
+            });
+
+        // Proposal costs
+        const costs = schedule.costs
+            .filter(c => proposal.costs.includes(c.costid))
+            .map(c => ({
+                type: "cost",
+                date: c.datein,
+                amount: c.unitcost * c.quantity,
+                ...c
+            }));
+
+        // Combined timeline
+        const items = [...labor, ...costs].sort(
+            (a, b) => new Date(a.date) - new Date(b.date)
+        );
+
+        const totalAmount = items.reduce(
+            (total, item) => total + item.amount,
+            0
+        );
+
         return {
-            error: false,
-            labor: scheduleDoc?.labor || [],
-            costs: scheduleDoc?.costs || [],
-            proposals: scheduleDoc?.proposals || []
+            proposalid: proposal.proposalid,
+            proposalnumber: proposal.proposalnumber,
+            version: proposal.version,
+            status: proposal.status,
+            dateproposal: proposal.dateproposal,
+            expirationdate: proposal.expirationdate,
+            dateapproved: proposal.dateapproved,
+            approvedby: proposal.approvedby,
+            comments: proposal.comments,
+            items,
+            totalAmount
         };
 
     } catch (err) {
-        console.error("Error loading schedule:", err);
+        console.error("Error retrieving proposal:", err);
 
         return {
-            error: true,
-            message: `Could not load schedule: ${err.message}`,
-            labor: [],
-            costs: [],
-            proposals: []
+            message: `Error: Could not retrieve proposal - ${err.message}`
         };
     }
 }
 
 
- async saveSchedule(mySchedule) {
+
+    async loadSchedule(projectid) {
+        try {
+            if (!projectid) {
+                throw new Error("Project ID is required to load a schedule.");
+            }
+
+            const scheduleDoc = await Schedules.findOne(
+                { projectid },
+                { projectid: 0, _id: 0 }
+            ).lean();
+
+            return {
+                error: false,
+                labor: scheduleDoc?.labor || [],
+                costs: scheduleDoc?.costs || [],
+                proposals: scheduleDoc?.proposals || []
+            };
+
+        } catch (err) {
+            console.error("Error loading schedule:", err);
+
+            return {
+                error: true,
+                message: `Could not load schedule: ${err.message}`,
+                labor: [],
+                costs: [],
+                proposals: []
+            };
+        }
+    }
+
+
+    async saveSchedule(mySchedule) {
         try {
             if (!mySchedule?.projectid) {
                 throw new Error("Project ID is required to save a timesheet.");
