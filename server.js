@@ -16,6 +16,7 @@ import https from 'https'
 import http from 'http'
 import Geotech from './classes/geotech.js';
 import Stripe from "stripe";
+import Notifications from './classes/notifications.js';
 
 // await testConnection()
 (async () => {

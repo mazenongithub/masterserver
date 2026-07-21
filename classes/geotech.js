@@ -207,8 +207,10 @@ class Geotech {
     }
 
     async HandlePaymentSucceeded(paymentIntent) {
+        const notification = new Notifications();
         const projectid = paymentIntent.metadata.projectid;
         const invoiceid = paymentIntent.metadata.invoiceid;
+        const clientid = paymentIntent.metadata.clientid;
 
         if (!projectid || !invoiceid) {
             throw new Error("Missing invoice metadata");
@@ -245,7 +247,7 @@ class Geotech {
         invoice.datepaid =
             new Date();
 
-        invoice.status =
+        invoice.paymentstatus =
             "paid";
 
         timesheet.costs.push({
@@ -269,6 +271,7 @@ class Geotech {
         );
 
         await timesheet.save();
+        await notification.invoiceEmail(clientid, projectid, invoiceid)
 
         console.log(
             `Invoice ${invoiceid} marked paid`

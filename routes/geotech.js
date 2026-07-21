@@ -268,6 +268,7 @@ export default (app) => {
         try {
             const geotech = new Geotech();
             const { projectid, invoiceid } = req.params;
+            const clientid = req.session.clientID;
 
             const calc = await geotech.calculateInvoiceTotal(projectid, invoiceid)
             const amount = (calc.total) * 100;
@@ -289,7 +290,8 @@ export default (app) => {
 
                 metadata: {
                     projectid,
-                    invoiceid
+                    invoiceid,
+                    clientid,
                 }
             });
 

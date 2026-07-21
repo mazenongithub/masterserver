@@ -1078,6 +1078,100 @@ class GFK {
         }
     }
 
+    async getInvoice(projectid, invoiceid) {
+    try {
+
+        const timesheet = await TimeSheets.findOne(
+            { projectid },
+            {
+                invoices: 1,
+                labor: 1,
+                costs: 1
+            }
+        ).lean();
+
+        if (!timesheet) {
+            throw new Error("Timesheet not found");
+        }
+
+        const invoice = timesheet.invoices.find(
+            i => i.invoiceid === invoiceid
+        );
+
+        if (!invoice) {
+            throw new Error("Invoice not found");
+        }
+
+        // Labor
+        const labor = timesheet.labor
+            .filter(l => invoice.labor.includes(l.laborid))
+            .map(l => {
+
+                const totalHours =
+                    (new Date(l.timeout) - new Date(l.timein)) /
+                    (1000 * 60 * 60);
+
+                return {
+                    type: "labor",
+                    date: l.timein,
+                    amount: totalHours * l.laborrate,
+                    totalhours: totalHours,
+                    ...l
+                };
+
+            });
+
+        // Costs
+        const costs = timesheet.costs
+            .filter(c => invoice.costs.includes(c.costid))
+            .map(c => ({
+                type: "cost",
+                date: c.datein,
+                amount: c.quantity * c.unitcost,
+                ...c
+            }));
+
+        // Chronological list
+        const items = [...labor, ...costs].sort(
+            (a, b) => new Date(a.date) - new Date(b.date)
+        );
+
+        // Totals
+        const laborTotal = labor.reduce(
+            (sum, item) => sum + item.amount,
+            0
+        );
+
+        const costTotal = costs.reduce(
+            (sum, item) => sum + item.amount,
+            0
+        );
+
+        const invoiceTotal = laborTotal + costTotal;
+
+        return {
+            invoiceid: invoice.invoiceid,
+            dateinvoice: invoice.dateinvoice,
+            status: invoice.status,
+            paymentstatus: invoice.paymentstatus,
+            transactionid: invoice.transactionid,
+            datepaid: invoice.datepaid,
+            items,
+            laborTotal,
+            costTotal,
+            invoiceTotal
+        };
+
+    } catch (err) {
+
+        console.error("Error retrieving invoice:", err);
+
+        return {
+            message: `Error: Could not retrieve invoice - ${err.message}`
+        };
+    }
+}
+
     async getProposal(projectid, proposalid) {
     try {
 

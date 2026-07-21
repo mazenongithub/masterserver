@@ -4,6 +4,194 @@ import Geotech from './geotech.js';
 import geotech from '../routes/geotech.js';
 class Notifications {
 
+    async invoiceEmail(clientid, projectid, invoiceid) {
+
+        const gfk = new GFK();
+        const geotech = new Geotech();
+
+        try {
+
+            const [client, project, invoice] = await Promise.all([
+                geotech.findClientByID(clientid),
+                gfk.getProjectById(projectid),
+                gfk.getInvoice(projectid, invoiceid)
+            ]);
+
+            const formatDate = (date) =>
+                new Date(date).toLocaleDateString("en-US", {
+                    timeZone: "America/Los_Angeles",
+                    month: "2-digit",
+                    day: "2-digit",
+                    year: "numeric"
+                });
+
+            const formatDateTime = (date) =>
+                new Date(date).toLocaleString("en-US", {
+                    timeZone: "America/Los_Angeles",
+                    month: "2-digit",
+                    day: "2-digit",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                    hour12: true
+                });
+
+            const formatMoney = (value) =>
+                Number(value).toLocaleString("en-US", {
+                    style: "currency",
+                    currency: "USD"
+                });
+
+            const invoiceRows = invoice.items.map(item => {
+
+                let date;
+                let quantity;
+                let amount;
+
+                if (item.type === "labor") {
+
+                    const totalHours =
+                        (new Date(item.timeout) - new Date(item.timein)) /
+                        (1000 * 60 * 60);
+
+                    date = formatDate(item.timein);
+
+                    quantity =
+                        `${totalHours.toFixed(2)} hrs @ ${formatMoney(item.laborrate)}/hr`;
+
+                    amount = totalHours * item.laborrate;
+
+                } else {
+
+                    date = formatDate(item.datein);
+
+                    quantity =
+                        `${item.quantity} ${item.unit} @ ${formatMoney(item.unitcost)}/${item.unit}`;
+
+                    amount = item.quantity * item.unitcost;
+
+                }
+
+                return `
+                <tr style="font-family:Tahoma, Arial, Helvetica, sans-serif;font-size:16px">
+                    <td width="17%">${date}</td>
+                    <td width="52%" colspan="3">${item.description || ""}</td>
+                    <td width="18%">${quantity}</td>
+                    <td width="13%" align="right">${formatMoney(amount)}</td>
+                </tr>
+            `;
+
+            }).join("");
+
+            const html = `
+
+<div>
+
+    <div style="margin-bottom:10px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <span style="font-size:16px">${client.firstname} ${client.lastname}</span>
+    </div>
+
+    <div style="margin-bottom:10px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <span style="font-size:16px">${client.address}</span>
+    </div>
+
+    <div style="margin-bottom:30px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <span style="font-size:16px">
+            ${client.city}, ${client.contactstate} ${client.zipcode}
+        </span>
+    </div>
+
+    <div style="margin-bottom:10px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <strong>Project Number:</strong> ${project.projectnumber || ""}
+    </div>
+
+    <div style="margin-bottom:10px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        ${project.title}
+    </div>
+
+    <div style="margin-bottom:10px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        ${project.projectaddress}
+    </div>
+
+    <div style="margin-bottom:30px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        ${project.projectcity}
+    </div>
+
+    <div style="margin-bottom:10px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <strong>Invoice Number:</strong> ${invoice.invoiceid}
+    </div>
+
+    <div style="margin-bottom:10px;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <strong>Invoice Date:</strong> ${formatDate(invoice.dateinvoice)}
+    </div>
+
+    <div style="margin-bottom:20px;text-align:center;font-family:Tahoma, Arial, Helvetica, sans-serif;">
+        <span style="font-size:20px"><strong>Invoice</strong></span>
+    </div>
+
+    <table width="100%" border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;">
+
+        <thead>
+            <tr style="font-family:Tahoma, Arial, Helvetica, sans-serif;font-size:16px;font-weight:bold;">
+                <th width="17%">Date</th>
+                <th width="52%" colspan="3">Description</th>
+                <th width="18%">Quantity</th>
+                <th width="13%">Amount</th>
+            </tr>
+        </thead>
+
+        <tbody>
+
+            ${invoiceRows}
+
+            <tr style="font-family:Tahoma, Arial, Helvetica, sans-serif;font-size:16px;font-weight:bold;">
+                <td colspan="5" align="right">Total</td>
+                <td align="right">${formatMoney(invoice.invoiceTotal)}</td>
+            </tr>
+
+        </tbody>
+
+    </table>
+
+    <table width="100%" cellpadding="8" cellspacing="0" style="margin-top:30px;border-collapse:collapse;">
+        <tr style="font-family:Tahoma, Arial, Helvetica, sans-serif;font-size:16px;">
+            <td width="50%" align="center">
+                <strong>Payment Status</strong><br>
+                ${invoice.paymentstatus}
+            </td>
+
+            <td width="50%" align="center">
+                <strong>Date Paid</strong><br>
+                ${invoice.datepaid ? formatDateTime(invoice.datepaid) : "Not Paid"}
+            </td>
+        </tr>
+    </table>
+
+</div>
+`;
+
+            await transporter.sendMail({
+                from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
+                to: "mazen@civilengineer.io",
+                subject: `${project.title} - Invoice`,
+                html
+            });
+
+              await transporter.sendMail({
+                from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
+                to: `${client.emailaddress}`,
+                subject: `${project.title} - Invoice`,
+                html
+            });
+
+        } catch (err) {
+
+            console.error("Error sending invoice email:", err);
+
+        }
+    }
+
     async proposalEmail(clientid, projectid, proposalid) {
         const gfk = new GFK();
         const geotech = new Geotech();
@@ -182,7 +370,7 @@ class Notifications {
                 html
             });
 
-             await transporter.sendMail({
+            await transporter.sendMail({
                 from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
                 to: `${client.emailaddress}`,
                 subject: `${project.title} - Proposal`,
