@@ -1,7 +1,7 @@
 import transporter from '../functions/mailer.js';
 import GFK from './gfk.js';
 import Geotech from './geotech.js';
-import geotech from '../routes/geotech.js';
+
 class Notifications {
 
     async invoiceEmail(clientid, projectid, invoiceid) {

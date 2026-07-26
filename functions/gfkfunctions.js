@@ -47,6 +47,53 @@ export function calcmoist(drywgt, tarewgt, wetwgt, wetwgt_2) {
 
 }
 
+export function calculateCost(quantity, unitCost) {
+  const qty = Number(quantity);
+  const cost = Number(unitCost);
+
+  if (isNaN(qty) || isNaN(cost)) return 0;
+
+  // round to hundredth
+  return Math.round(qty * cost * 100) / 100;
+}
+
+export function escapeXml(value = "") {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
+}
+
+ export function formatDate(date) {
+
+    if (!date) return "";
+
+    const d = new Date(date);
+
+    if (isNaN(d.getTime())) return "";
+
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const year = d.getFullYear();
+
+    return `${month}/${day}/${year}`;
+}
+
+export function calculateLaborCost(timeIn, timeOut, laborRate) {
+  const start = new Date(timeIn);
+  const end = new Date(timeOut);
+
+  const diffMs = end - start;                        // difference in milliseconds
+  const hours = diffMs / (1000 * 60 * 60);           // convert to hours
+  const roundedHours = Math.round(hours * 100) / 100; // round to hundredth
+
+  const totalCost = Math.round(roundedHours * laborRate * 100) / 100;
+
+  return totalCost;
+}
+
 export function loadChart() {
     return ([
         {

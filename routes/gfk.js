@@ -6,7 +6,7 @@ import fs from 'fs';
 import { checkSessionGFK } from '../middleware/checkgfk.js'
 import { create } from 'xmlbuilder2';
 import { streamFOP } from '../xsl/fopHelper.js';
-import { calcdryden, calcmoist } from '../functions/gfkfunctions.js';
+import { calcdryden, calcmoist, calculateCost, calculateLaborCost, escapeXml, formatDate } from '../functions/gfkfunctions.js';
 import UnconfinedCalcs from '../classes/unconfinedcalcs.js';
 import SoilClassification from '../classes/soilclassification.js';
 import CivilEngineer from '../classes/civilengineer.js'
@@ -641,7 +641,7 @@ export default (app) => {
   });
 
 
-   app.post('/gfk/saveschedule', checkSessionGFK, async (req, res) => {
+  app.post('/gfk/saveschedule', checkSessionGFK, async (req, res) => {
     try {
       const gfk = new GFK();
       const { projectid, schedule } = req.body;
@@ -715,7 +715,7 @@ export default (app) => {
 
       ]);
 
-   
+
 
       // Return response with projectid attached
       return res.status(200).json({
@@ -1001,6 +1001,137 @@ export default (app) => {
       console.error(err);
       res.send({ message: `Error: Could not load summary ${err}` });
     }
+  });
+
+  app.get("/gfk/xml/:projectid/invoice/:invoiceid", async (req, res) => {
+
+
+
+    try {
+
+      const gfk = new GFK();
+      const { projectid, invoiceid } = req.params;
+
+      const project = await gfk.getProjectById(projectid);
+
+      if (!project) {
+        return res.status(404).send({
+          Error: "Project Not Found"
+        });
+      }
+
+      const client = await gfk.findClientByID(project.clientid);
+
+      if (!client) {
+        return res.status(404).send({
+          Error: "Client Not Found"
+        });
+      }
+
+      const invoice = await gfk.getInvoice(projectid, invoiceid);
+
+      if (!invoice) {
+        return res.status(404).send({
+          Error: "Invoice Not Found"
+        });
+      }
+
+
+      let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<invoice>
+
+<Client>
+    <ClientID>${escapeXml(client.clientid)}</ClientID>
+    <Company>${escapeXml(client.company)}</Company>
+    <Contact>${escapeXml(client.firstname)} ${escapeXml(client.lastname)}</Contact>
+    <Email>${escapeXml(client.emailaddress)}</Email>
+    <Phone>${escapeXml(client.phonenumber)}</Phone>
+    <Address>${escapeXml(client.address)}</Address>
+    <City>${escapeXml(client.city)}</City>
+    <State>${escapeXml(client.contactstate)}</State>
+    <Zip>${escapeXml(client.zipcode)}</Zip>
+</Client>
+
+<Project>
+    <ProjectID>${escapeXml(project.projectid)}</ProjectID>
+    <Title>${escapeXml(project.title)}</Title>
+    <Description>${escapeXml(project.sow)}</Description>
+    <address>${escapeXml(project.projectaddress)}</address>
+    <city>${escapeXml(project.projectcity)}</city>
+    <projectnumber>${escapeXml(project.projectnumber)}</projectnumber>
+</Project>
+
+<Invoice>
+    <InvoiceID>${escapeXml(invoice.invoiceid)}</InvoiceID>
+    <InvoiceDate>${formatDate(invoice.dateinvoice)}</InvoiceDate>
+    <PaymentStatus>${escapeXml(invoice.paymentstatus || "")}</PaymentStatus>
+    <TransactionID>${escapeXml(invoice.transactionid || "")}</TransactionID>
+    <DatePaid>${formatDate(invoice.datepaid) || ""}</DatePaid>
+    <invoicetotal>${invoice.invoiceTotal}</invoicetotal>
+
+    <Items>`;
+
+
+      invoice.items.forEach(item => {
+
+        if (item.type === "labor") {
+
+          const hours =
+            (new Date(item.timeout) -
+              new Date(item.timein)) /
+            (1000 * 60 * 60);
+
+          xml += `
+        <Labor>
+            <LaborID>${escapeXml(item.laborid)}</LaborID>
+            <EngineerID>${escapeXml(item.engineerid)}</EngineerID>
+            <Date>${formatDate(item.timein)}</Date>
+            <TimeIn>${item.timein}</TimeIn>
+            <TimeOut>${item.timeout}</TimeOut>
+            <Description>${escapeXml(item.description)}</Description>
+            <Hours>${hours.toFixed(2)}</Hours>
+            <Rate>${item.laborrate}</Rate>
+            <Total>${calculateLaborCost(item.timein, item.timeout, item.laborrate).toFixed(2)}</Total>
+        </Labor>`;
+
+        } else if (item.type === "cost") {
+
+          xml += `
+        <Cost>
+            <CostID>${escapeXml(item.costid)}</CostID>
+            <Date>${formatDate(item.datein)}</Date>
+            <Description>${escapeXml(item.description)}</Description>
+            <Quantity>${item.quantity}</Quantity>
+            <Unit>${escapeXml(item.unit)}</Unit>
+            <UnitCost>${item.unitcost}</UnitCost>
+            <Total>${calculateCost(item.quantity, item.unitcost).toFixed(2)}</Total>
+        </Cost>`;
+        }
+
+      });
+
+
+      xml += `
+    </Items>
+
+</Invoice>
+
+</invoice>`;
+
+
+        streamFOP(xml, 'xsl/invoice.xsl', res, `invoice-${invoiceid}.pdf`, 'pdf');
+
+
+    } catch (err) {
+
+      console.error(err);
+
+      return res.status(500).send({
+        Error: `Could not load invoice. ${err.message}`
+      });
+
+    }
+
   });
 
   app.get('/gfk/xml/:projectid/fieldreport/:fieldid', checkSessionGFK, async (req, res) => {
