@@ -6,7 +6,7 @@ import fs from 'fs';
 import { checkSessionGFK } from '../middleware/checkgfk.js'
 import { create } from 'xmlbuilder2';
 import { streamFOP } from '../xsl/fopHelper.js';
-import { calcdryden, calcmoist, calculateCost, calculateLaborCost, escapeXml, formatDate } from '../functions/gfkfunctions.js';
+import { calcdryden, calcmoist, calculateCost, calculateLaborCost, escapeXml, formatDate, formatDateTime } from '../functions/gfkfunctions.js';
 import UnconfinedCalcs from '../classes/unconfinedcalcs.js';
 import SoilClassification from '../classes/soilclassification.js';
 import CivilEngineer from '../classes/civilengineer.js'
@@ -881,7 +881,7 @@ export default (app) => {
   // Assuming you have a MongoDB `db` instance ready
   // e.g., const db = client.db("yourDb");
 
-  app.get('/gfk/xml/:projectid/labsummary', checkSessionGFK, async (req, res) => {
+  app.get('/gfk/xml/:projectid/labsummary',  async (req, res) => {
     try {
       const gfk = new GFK();
       const unconfinedcalcs = new UnconfinedCalcs();
@@ -1003,6 +1003,143 @@ export default (app) => {
     }
   });
 
+  app.get("/gfk/xml/:projectid/proposal/:proposalid", async (req, res) => {
+
+    try {
+
+      const gfk = new GFK();
+      const { projectid, proposalid } = req.params;
+
+      const project = await gfk.getProjectById(projectid);
+
+      if (!project) {
+        return res.status(404).send({
+          Error: "Project Not Found"
+        });
+      }
+
+      const client = await gfk.findClientByID(project.clientid);
+
+      if (!client) {
+        return res.status(404).send({
+          Error: "Client Not Found"
+        });
+      }
+
+
+      const proposal = await gfk.getProposal(projectid, proposalid);
+
+      if (!proposal) {
+        return res.status(404).send({
+          Error: "Proposal Not Found"
+        });
+      }
+
+
+      let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<proposal>
+
+<Client>
+    <ClientID>${escapeXml(client.clientid)}</ClientID>
+    <Company>${escapeXml(client.company)}</Company>
+    <Contact>${escapeXml(client.firstname)} ${escapeXml(client.lastname)}</Contact>
+    <Email>${escapeXml(client.emailaddress)}</Email>
+    <Phone>${escapeXml(client.phonenumber)}</Phone>
+    <Address>${escapeXml(client.address)}</Address>
+    <City>${escapeXml(client.city)}</City>
+    <State>${escapeXml(client.contactstate)}</State>
+    <Zip>${escapeXml(client.zipcode)}</Zip>
+</Client>
+
+<Project>
+    <ProjectID>${escapeXml(project.projectid)}</ProjectID>
+    <Title>${escapeXml(project.title)}</Title>
+    <Description>${escapeXml(project.sow)}</Description>
+    <address>${escapeXml(project.projectaddress)}</address>
+    <city>${escapeXml(project.projectcity)}</city>
+    <projectnumber>${escapeXml(project.projectnumber)}</projectnumber>
+</Project>
+
+
+<Proposal>
+    <ProposalID>${escapeXml(proposal.proposalid)}</ProposalID>
+    <ProposalDate>${formatDate(proposal.dateproposal)}</ProposalDate>
+    <status>${escapeXml(proposal.status || "")}</status>
+    <version>${escapeXml(proposal.version || "")}</version>
+    <dateapproved>${formatDateTime(proposal.dateapproved) || ""}</dateapproved>
+    <expirationdate>${formatDate(proposal.expirationdate) || ""}</expirationdate>
+    <approvedby>${escapeXml(proposal.approvedby) || ""}</approvedby>
+    <comments>${escapeXml(proposal.comments) || ""}</comments>
+    <totalAmount>${proposal.totalAmount}</totalAmount>
+    <proposalnumber>${escapeXml(proposal.proposalnumber)}</proposalnumber>
+
+    <Items>`;
+
+
+      proposal.items.forEach(item => {
+
+        if (item.type === "labor") {
+
+          const hours =
+            (new Date(item.timeout) -
+              new Date(item.timein)) /
+            (1000 * 60 * 60);
+
+          xml += `
+        <Labor>
+            <LaborID>${escapeXml(item.laborid)}</LaborID>
+            <EngineerID>${escapeXml(item.engineerid)}</EngineerID>
+            <Date>${formatDate(item.timein)}</Date>
+            <TimeIn>${item.timein}</TimeIn>
+            <TimeOut>${item.timeout}</TimeOut>
+            <Description>${escapeXml(item.description)}</Description>
+            <Hours>${hours.toFixed(2)}</Hours>
+            <Rate>${item.laborrate}</Rate>
+            <Total>${calculateLaborCost(item.timein, item.timeout, item.laborrate).toFixed(2)}</Total>
+        </Labor>`;
+
+        } else if (item.type === "cost") {
+
+          xml += `
+        <Cost>
+            <CostID>${escapeXml(item.costid)}</CostID>
+            <Date>${formatDate(item.datein)}</Date>
+            <Description>${escapeXml(item.description)}</Description>
+            <Quantity>${item.quantity}</Quantity>
+            <Unit>${escapeXml(item.unit)}</Unit>
+            <UnitCost>${item.unitcost}</UnitCost>
+            <Total>${calculateCost(item.quantity, item.unitcost).toFixed(2)}</Total>
+        </Cost>`;
+        }
+
+      });
+
+
+      xml += `
+    </Items>
+
+</Proposal>
+
+</proposal>`
+
+ streamFOP(xml, 'xsl/proposal.xsl', res, `proposal-${proposalid}.pdf`, 'pdf');
+
+
+
+
+    } catch (err) {
+
+      console.error(err);
+
+      return res.status(500).send({
+        Error: `Could not load proposal. ${err.message}`
+      });
+
+    }
+
+
+  })
+
   app.get("/gfk/xml/:projectid/invoice/:invoiceid", async (req, res) => {
 
 
@@ -1119,7 +1256,7 @@ export default (app) => {
 </invoice>`;
 
 
-        streamFOP(xml, 'xsl/invoice.xsl', res, `invoice-${invoiceid}.pdf`, 'pdf');
+      streamFOP(xml, 'xsl/invoice.xsl', res, `invoice-${invoiceid}.pdf`, 'pdf');
 
 
     } catch (err) {
@@ -1134,7 +1271,7 @@ export default (app) => {
 
   });
 
-  app.get('/gfk/xml/:projectid/fieldreport/:fieldid', checkSessionGFK, async (req, res) => {
+  app.get('/gfk/xml/:projectid/fieldreport/:fieldid', async (req, res) => {
     try {
 
       const gfk = new GFK();
