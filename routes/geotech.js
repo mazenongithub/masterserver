@@ -182,15 +182,15 @@ export default (app) => {
             }
 
             const client = result.client;
-
+          
 
             // 3️⃣ Save session
             req.session.clientID = client._id;
             await req.session.save();
 
             // 4️⃣ Load client projects
-            const projects = await geotech.findProjectsByClientID(client._id);
-
+            const projects = await geotech.findProjectsByClientID(client._id.toString());
+            
             // 5️⃣ Return client and projects
             return res.status(200).json({ client, projects });
 
