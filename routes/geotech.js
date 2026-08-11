@@ -182,7 +182,7 @@ export default (app) => {
             }
 
             const client = result.client;
-          
+
 
             // 3️⃣ Save session
             req.session.clientID = client._id;
@@ -190,7 +190,7 @@ export default (app) => {
 
             // 4️⃣ Load client projects
             const projects = await geotech.findProjectsByClientID(client._id.toString());
-            
+
             // 5️⃣ Return client and projects
             return res.status(200).json({ client, projects });
 
@@ -355,7 +355,15 @@ export default (app) => {
             // Update if exists
             const result = await MyProjects.updateOne(
                 { companyid, "projects.projectid": projectid },
-                { $set: { "projects.$": updatedProject } }
+                {
+                    $set: {
+                        "projects.$.title": updatedProject.title,
+                        "projects.$.sow": updatedProject.sow,
+                        "projects.$.projectaddress": updatedProject.projectaddress,
+                        "projects.$.projectcity": updatedProject.projectcity,
+                        "projects.$.projectapn": updatedProject.projectapn
+                    }
+                }
             );
 
             // Insert if not found
