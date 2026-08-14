@@ -272,6 +272,7 @@ export default (app) => {
 
             const calc = await geotech.calculateInvoiceTotal(projectid, invoiceid)
             const amount = (calc.total) * 100;
+           
 
             if (amount <= 0) {
                 throw new Error(

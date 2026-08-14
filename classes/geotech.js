@@ -207,75 +207,91 @@ class Geotech {
     }
 
     async HandlePaymentSucceeded(paymentIntent) {
-        const notification = new Notifications();
-        const projectid = paymentIntent.metadata.projectid;
-        const invoiceid = paymentIntent.metadata.invoiceid;
-        const clientid = paymentIntent.metadata.clientid;
+        try {
+            const notification = new Notifications();
 
-        if (!projectid || !invoiceid) {
-            throw new Error("Missing invoice metadata");
-        }
+            const projectid = paymentIntent.metadata.projectid;
+            const invoiceid = paymentIntent.metadata.invoiceid;
+            const clientid = paymentIntent.metadata.clientid;
 
-        const timesheet = await TimeSheets.findOne({ projectid });
+            if (!projectid || !invoiceid) {
+                throw new Error("Missing invoice metadata");
+            }
 
-        if (!timesheet) {
-            throw new Error(`Project not found: ${projectid}`);
-        }
+            const timesheet = await TimeSheets.findOne({ projectid });
 
-        const invoice = timesheet.invoices.find(
-            inv => inv.invoiceid === invoiceid
-        );
+            if (!timesheet) {
+                throw new Error(`Project not found: ${projectid}`);
+            }
 
-        if (!invoice) {
-            throw new Error(`Invoice not found: ${invoiceid}`);
-        }
-
-        // Prevent duplicate webhook processing
-        if (invoice.transactionid) {
-            console.log(
-                `Invoice ${invoiceid} already paid. Skipping.`
+            const invoice = timesheet.invoices.find(
+                inv => inv.invoiceid === invoiceid
             );
-            return;
+
+            if (!invoice) {
+                throw new Error(`Invoice not found: ${invoiceid}`);
+            }
+
+            // Prevent duplicate webhook processing
+            if (invoice.transactionid) {
+                console.log(
+                    `Invoice ${invoiceid} already paid. Skipping.`
+                );
+                return;
+            }
+
+            const amountPaid =
+                paymentIntent.amount_received / 100;
+
+            invoice.transactionid =
+                paymentIntent.id;
+
+            invoice.datepaid =
+                new Date();
+
+            invoice.paymentstatus =
+                "paid";
+
+            timesheet.costs.push({
+                engineerid: "stripe",
+                costid: crypto.randomUUID(),
+                datein: new Date(),
+                unitcost: -amountPaid,
+                quantity: 1,
+                unit: "payment",
+                description:
+                    `Stripe Payment ${paymentIntent.id}`
+            });
+
+            const paymentCost =
+                timesheet.costs[
+                timesheet.costs.length - 1
+                ];
+
+            invoice.costs.push(
+                paymentCost.costid
+            );
+
+            await timesheet.save();
+            await notification.invoiceEmail(clientid, projectid, invoiceid)
+
+            console.log(
+                `Invoice ${invoiceid} marked paid`
+            );
+            return invoice;
+
+        } catch (err) {
+
+            console.error(
+                `HandlePaymentSucceeded failed:`,
+                err
+            );
+
+            // IMPORTANT:
+            // Re-throw so the Stripe webhook knows
+            // processing failed.
+            throw err;
         }
-
-        const amountPaid =
-            paymentIntent.amount_received / 100;
-
-        invoice.transactionid =
-            paymentIntent.id;
-
-        invoice.datepaid =
-            new Date();
-
-        invoice.paymentstatus =
-            "paid";
-
-        timesheet.costs.push({
-            engineerid: "stripe",
-            costid: crypto.randomUUID(),
-            datein: new Date(),
-            unitcost: -amountPaid,
-            quantity: 1,
-            unit: "payment",
-            description:
-                `Stripe Payment ${paymentIntent.id}`
-        });
-
-        const paymentCost =
-            timesheet.costs[
-            timesheet.costs.length - 1
-            ];
-
-        invoice.costs.push(
-            paymentCost.costid
-        );
-
-        await timesheet.save();
-        await notification.invoiceEmail(clientid, projectid, invoiceid)
-
-        console.log(
-            `Invoice ${invoiceid} marked paid`
-        );
     }
 
     async HandlePaymentFailed() {

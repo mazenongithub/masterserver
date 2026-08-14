@@ -9,21 +9,14 @@ import { streamFOP } from '../xsl/fopHelper.js';
 import { calcdryden, calcmoist, calculateCost, calculateLaborCost, escapeXml, formatDate, formatDateTime } from '../functions/gfkfunctions.js';
 import UnconfinedCalcs from '../classes/unconfinedcalcs.js';
 import SoilClassification from '../classes/soilclassification.js';
+import ChatUser from '../classes/chatuser.js'
 import CivilEngineer from '../classes/civilengineer.js'
 import { rateLimiter } from '../middleware/ratelimit.js';
 
+
 export default (app) => {
 
-  const pool = mysql.createPool({
-    host: 'localhost',
-    user: 'mazen',
-    password: 'Iforgot1!',
-    database: 'GFK_TABLES',
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
 
-  });
 
   const folders = [
     'uploads/gfk/fieldimages',
@@ -52,6 +45,72 @@ export default (app) => {
   // Routes
   const uploadFieldImage = multer({ storage: createStorage('uploads/gfk/fieldimages') });
   const uploadLogDraft = multer({ storage: createStorage('uploads/gfk/logdraft') });
+
+   app.ws("/test-ws", (ws, req) => {
+        console.log("🔥 TEST WEBSOCKET CONNECTED");
+
+        ws.send(JSON.stringify({
+            type: "test",
+            message: "WebSocket is working"
+        }));
+    });
+ 
+
+ app.ws("/:clientid/projects/:projectid/websocketapi", function (ws, req, next) {
+
+    // req.session.myuser = {};
+    // req.session.myuser._id = 'RX28A8I1MA3SRLS4'
+    // req.session.myuser.userid = 'maison'
+    // req.session.myuser.companyid ='661d45d677fdcfa48c8e8ed1'
+
+    // console.log("myuser", req.session.myuser)
+   const { clientid, projectid } = req.params;
+  
+
+    try {
+      const user = new ChatUser(
+        ws.send.bind(ws), // fn to call to message this user
+        `geotech:${projectid}`, // name of room for user
+        clientid // username
+      );
+
+
+      // register handlers for message-received, connection-closed
+
+      ws.on("message", function (jsonData) {
+        try {
+
+           console.log("message", jsonData)
+
+          // compare saved company to data
+
+          // save company
+
+
+
+          user.projectHandler(jsonData, projectid)
+
+
+        } catch (err) {
+          console.error(err);
+        }
+      });
+
+
+      ws.on("close", function () {
+         console.log("close")
+        try {
+          user.handleClose();
+        } catch (err) {
+          console.error(err);
+        }
+      });
+    } catch (err) {
+      console.error(err);
+    }
+
+
+  })
 
   app.post('/gfk/savecontactus', rateLimiter, async (req, res) => {
     const gfk = new GFK();
@@ -846,42 +905,11 @@ export default (app) => {
     }
   });
 
-  app.get("/gfk/loadzonecharts", async (req, res) => {
-    try {
-      const queries = {
-        zone_1: "SELECT PI, LL, Gamma FROM ZoneOne",
-        zone_2: "SELECT PI, LL, Gamma FROM ZoneTwo",
-        zone_3: "SELECT PI, LL, Gamma FROM ZoneThree",
-        zone_4: "SELECT PI, LL, Gamma FROM ZoneFour",
-        zone_5: "SELECT PI, LL, Gamma FROM ZoneFive",
-        zone_6: "SELECT PI, LL, Gamma FROM ZoneSix"
-      };
-
-      // Run all queries in parallel
-      const results = await Promise.all(
-        Object.values(queries).map(q => pool.query(q))
-      );
-
-      // Map results back to keys
-      const zonecharts = Object.keys(queries).reduce((acc, key, index) => {
-        acc[key] = results[index][0]; // [rows] from pool.query
-        return acc;
-      }, {});
-
-      return res.json({ zonecharts });
-
-    } catch (err) {
-      console.error("Error loading zone charts:", err);
-      return res.status(500).json({ error: "Could not load charts." });
-    }
-  });
-
-
 
   // Assuming you have a MongoDB `db` instance ready
   // e.g., const db = client.db("yourDb");
 
-  app.get('/gfk/xml/:projectid/labsummary',  async (req, res) => {
+  app.get('/gfk/xml/:projectid/labsummary', async (req, res) => {
     try {
       const gfk = new GFK();
       const unconfinedcalcs = new UnconfinedCalcs();
@@ -1122,7 +1150,7 @@ export default (app) => {
 
 </proposal>`
 
- streamFOP(xml, 'xsl/proposal.xsl', res, `proposal-${proposalid}.pdf`, 'pdf');
+      streamFOP(xml, 'xsl/proposal.xsl', res, `proposal-${proposalid}.pdf`, 'pdf');
 
 
 
