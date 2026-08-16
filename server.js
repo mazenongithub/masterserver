@@ -118,88 +118,88 @@ app.set("trust proxy", 1); // trust first proxy
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-app.post(
-    "/stripe/webhook",
-    express.raw({ type: "application/json" }),
-    async (req, res) => {
+app.post("/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
 
-        console.log("stripe signature", req.headers["stripe-signature"]);
+    console.log("stripe signature", req.headers["stripe-signature"]);
 
-        const geotech = new Geotech();
+    const geotech = new Geotech();
 
-        const sig = req.headers["stripe-signature"];
+    const sig = req.headers["stripe-signature"];
 
-        let event;
+    let event;
 
-        try {
+    try {
 
-            event = stripe.webhooks.constructEvent(
-                req.body,
-                sig,
-                process.env.STRIPE_WEBHOOK_SECRET
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        process.env.STRIPE_WEBHOOK_SECRET
+      );
+
+      console.log("142", event.type)
+
+      switch (event.type) {
+
+        case "payment_intent.succeeded": {
+
+
+          const paymentIntent = event.data.object;
+
+          const projectid = paymentIntent.metadata.projectid;
+          const invoiceid = paymentIntent.metadata.invoiceid;
+
+          const updatedInvoice =
+            await geotech.HandlePaymentSucceeded(
+              paymentIntent
             );
 
-            console.log("142", event.type)
-
-            switch (event.type) {
-
-                case "payment_intent.succeeded": {
 
 
-                    const paymentIntent = event.data.object;
+          if (projectid) {
 
-                    const projectid = paymentIntent.metadata.projectid;
-                    const invoiceid = paymentIntent.metadata.invoiceid;
+            Room.broadcastProjectUpdate(
+              `geotech:${projectid}`,
+              {
+                type: "invoicepayment-submitted",
+                message: "invoicepayment-submitted",
+                updatedInvoice:updatedInvoice.invoice,
+                paymentcost: updatedInvoice.paymentCost
+              }
+            );
 
-                    const updatedInvoice =
-                        await geotech.HandlePaymentSucceeded(
-                            paymentIntent
-                        );
+          }
 
-                
-
-                    if (projectid) {
-
-                        Room.broadcastProjectUpdate(
-                            `geotech:${projectid}`,
-                            {
-                                type: "invoicepayment-submitted",
-                                message: "invoicepayment-submitted",
-                                updatedInvoice: updatedInvoice
-                            }
-                        );
-
-                    }
-
-                    break;
-                }
-
-                case "payment_intent.payment_failed": {
-
-                    const paymentIntent = event.data.object;
-
-                    await geotech.HandlePaymentFailed(
-                        paymentIntent
-                    );
-
-                    break;
-                }
-
-                default:
-                    console.log("Ignored event:", event.type);
-            }
-
-            res.json({ received: true });
-
-        } catch (err) {
-
-            console.log(err);
-
-            return res
-                .status(400)
-                .send(`Webhook Error: ${err.message}`);
+          break;
         }
+
+        case "payment_intent.payment_failed": {
+
+          const paymentIntent = event.data.object;
+
+          await geotech.HandlePaymentFailed(
+            paymentIntent
+          );
+
+          break;
+        }
+
+        default:
+          console.log("Ignored event:", event.type);
+      }
+
+      res.json({ received: true });
+
+    } catch (err) {
+
+      console.log(err);
+
+      return res
+        .status(400)
+        .send(`Webhook Error: ${err.message}`);
     }
+  }
 );
 
 

@@ -278,7 +278,7 @@ class Geotech {
             console.log(
                 `Invoice ${invoiceid} marked paid`
             );
-            return invoice;
+            return {invoice,paymentCost}
 
         } catch (err) {
 
