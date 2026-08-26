@@ -13,14 +13,194 @@ import express from 'express';
 import compareProjects from "../middleware/compareprojects.js";
 import compareProject from "../middleware/compareproject.js";
 import Notifications from "../classes/notifications.js";
-
+import { validateEmail, formatDateExp } from '../functions/index.js'
+import { promiseHooks } from "v8";
 export default (app) => {
 
     // Multer storage
     // Temporary upload folder
     const upload = multer({ dest: "uploads/temp" }); // multer saves to temp first
 
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); '/'
+
+    app.post(`/geotech/registernewclient`, async (req, res) => {
+        try {
+            const gfk = new GFK();
+            const geotech = new Geotech();
+            const notification = new Notifications();
+
+            const { clientid, emailaddress } = req.body;
+
+            if (!clientid || !emailaddress) {
+                return res.status(400).json({
+                    error: "Client ID and email address are required to register a new client."
+                });
+            }
+
+            if (!validateEmail(emailaddress)) {
+                return res.status(400).json({
+                    error: `Invalid email address: ${emailaddress}`
+                });
+            }
+
+            // Create the new client
+            const newClient = await gfk.addClient(
+                clientid,
+                emailaddress
+            );
+
+            console.log(newClient, "52", clientid, emailaddress)
+
+            if (!newClient || !newClient._id) {
+                return res.status(400).json({
+                    error: "Could not create new client."
+                });
+            }
+
+            const client_id = newClient._id.toString();
+
+            // Generate and save login code
+            const loginCode = await geotech.getLoginCode(client_id);
+
+            const DateExp = formatDateExp(loginCode.DateExp);
+
+            // Send login email
+            const emailLoginCode = await notification.sendLoginEmail(
+                emailaddress,
+                loginCode.loginCode,
+                DateExp
+            );
+
+            return res.json({
+                newClient,
+                status: 'served',
+                client_id,
+                clientid,
+                emailaddress,
+                dateexp: DateExp,
+                message: emailLoginCode.message
+            });
+
+        } catch (error) {
+            console.error("Client registration/login error:", error);
+
+            return res.status(500).json({
+                error: "Unable to complete registration."
+            });
+        }
+    });
+
+    app.post(`/geotech/clientlogin`, async (req, res) => {
+        try {
+            const { loginCode, client_id } = req.body;
+
+            if (!loginCode || !client_id) {
+                return res.status(400).json({
+                    error: "Login code and client ID are required."
+                });
+            }
+
+            const geotech = new Geotech();
+
+            const compareCode = await geotech.compareLoginCode(
+                loginCode,
+                client_id
+            );
+
+            if (!compareCode) {
+                return res.status(401).json({
+                    error: "Invalid or expired login code."
+                });
+            }
+
+            const [client, projects] = await Promise.all([
+                geotech.findClientByID(client_id),
+                geotech.findProjectsByClientID(client_id)
+            ]);
+
+            if (!client) {
+                return res.status(404).json({
+                    error: "Client not found."
+                });
+            }
+
+            return res.json({
+                client,
+                projects
+            });
+
+        } catch (error) {
+            console.error("Client login error:", error);
+
+            return res.status(500).json({
+                error: "Unable to complete login."
+            });
+        }
+    });
+
+    app.get(`/geotech/:clientemail/login`, async (req, res) => {
+
+        const { clientemail } = req.params;
+
+        if (!validateEmail(clientemail)) {
+            return res.status(400).json({
+                status: 'error',
+                message: `Invalid email address ${clientemail}`
+            });
+        }
+
+        const gfk = new GFK();
+        const geotech = new Geotech();
+        const notification = new Notifications();
+
+        try {
+
+            const loginUser = await gfk.getClientByEmail(clientemail);
+
+            // Client does not exist - request registration
+            if (!loginUser) {
+                return res.json({
+                    status: 'register',
+                    emailaddress: clientemail,
+                    message: `No account exists for the email address ${clientemail}. Please register your ClientID.`
+                });
+            }
+
+            // Generate and save login code
+            const loginCode = await geotech.getLoginCode(
+                loginUser._id.toString()
+            );
+
+            const DateExp = formatDateExp(loginCode.DateExp);
+
+            // Send login email
+            const emailLoginCode = await notification.sendLoginEmail(
+                loginUser.emailaddress,
+                loginCode.loginCode,
+                DateExp
+            );
+
+            return res.json({
+                status: 'served',
+                client_id: loginUser._id.toString(),
+                clientid: loginUser.clientid,
+                emailaddress: loginUser.emailaddress,
+                dateexp: DateExp,
+                message: emailLoginCode.message
+            });
+
+        } catch (err) {
+
+            console.error('Login authentication error:', err);
+
+            return res.status(500).json({
+                status: 'error',
+                message: 'Could not process login request.'
+            });
+        }
+    });
+
+
 
     app.post("/geotech/uploadprofilephoto", upload.single("profilephoto"), async (req, res) => {
         try {
@@ -272,7 +452,7 @@ export default (app) => {
 
             const calc = await geotech.calculateInvoiceTotal(projectid, invoiceid)
             const amount = (calc.total) * 100;
-           
+
 
             if (amount <= 0) {
                 throw new Error(

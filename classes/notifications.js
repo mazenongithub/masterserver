@@ -178,7 +178,7 @@ class Notifications {
                 html
             });
 
-              await transporter.sendMail({
+            await transporter.sendMail({
                 from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
                 to: `${client.emailaddress}`,
                 subject: `${project.title} - Invoice`,
@@ -191,6 +191,36 @@ class Notifications {
 
         }
     }
+
+    async sendLoginEmail(emailaddress, loginCode, DateExp) {
+
+
+        let html = (emailaddress, loginCode, DateExp) => {
+            return (`<div id="main-body">
+                <div style="font-family:Tahoma, Arial, Helvetica, sans-serif; margin-bottom:1em;">
+                    <span style="font-size:16px;">Your Login Code is: ${loginCode} </span>
+                </div>
+                <div style="font-family:Tahoma, Arial, Helvetica, sans-serif; margin-bottom:1em;">
+                    <span style="font-size:16px;">Email Address: ${emailaddress} </span>
+                </div>
+                <div style="font-family:Tahoma, Arial, Helvetica, sans-serif; margin-bottom:1em;">
+                    <span style="font-size:16px;">Expires: ${DateExp}  </span>
+                </div>
+            </div>`)
+        }
+
+
+        await transporter.sendMail({
+            from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
+            to: emailaddress,
+            subject: `Your Geotech Login Code`,
+            html: html(emailaddress, loginCode, DateExp)
+        });
+
+        return {message: `Notification Login Email sent to ${emailaddress}. This login will expire on ${DateExp}. Please check your email to securely login `}
+
+    }
+
 
     async proposalEmail(clientid, projectid, proposalid) {
         const gfk = new GFK();
@@ -382,6 +412,8 @@ class Notifications {
             console.error("Error sending proposal email:", err);
         }
     }
+
+
 
     async sendRegistrationEmail(myuser) {
 

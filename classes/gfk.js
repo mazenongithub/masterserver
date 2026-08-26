@@ -655,6 +655,34 @@ class GFK {
         }
     }
 
+    async getClientByEmail(emailaddress) {
+
+        const result = await GFKCompany.findOne(
+            { "clients.emailaddress": emailaddress },
+            { "clients.$": 1 }
+        ).lean();
+
+        return result?.clients?.[0] || null;
+    }
+
+    async createNewUserByEmail(emailaddress) {
+
+        const client = {
+            emailaddress: emailaddress.trim().toLowerCase()
+        };
+
+        const result = await GFKCompany.findOneAndUpdate(
+            {},
+            { $push: { clients: client } },
+            {
+                new: true,
+                projection: { clients: { $slice: -1 } }
+            }
+        ).lean();
+
+        return result?.clients?.[0] || null;
+    }
+
 
     async loadFieldReports(projectid) {
         try {
@@ -711,6 +739,7 @@ class GFK {
     }
 
 
+
     async findClients() {
         try {
             // Find a single company document
@@ -731,31 +760,38 @@ class GFK {
         }
     }
 
-    async findClientByID(client_id) {
+
+    async addClient( clientid, emailaddress) {
         try {
+            const gfkCompany = await GFKCompany.findOne({
+                company: 'gfk'
+            });
 
-            const clientDoc = await GFKCompany.findOne(
-                {
-                    company: "gfk",
-                    "clients._id": client_id
-                },
-                {
-                    "clients.$": 1
-                }
-            );
+            if (!gfkCompany) {
+                return null;
+            }
 
-            return clientDoc?.clients?.[0] || null;
-
-        } catch (err) {
-            console.error("Error: Could not find client", err);
-            return {
-                message: `Error: Could not find client - ${err.message}`
+            const newClient = {
+                clientid: clientid,
+                emailaddress: emailaddress
             };
+
+            // Add client to the embedded clients array
+            gfkCompany.clients.push(newClient);
+
+            // Save the document
+            await gfkCompany.save();
+
+            // Return the newly created embedded client
+            return gfkCompany.clients[gfkCompany.clients.length - 1];
+
+        } catch (error) {
+            console.error("Error adding client:", error);
+            throw error;
         }
     }
 
 
-    
 
 
 
@@ -1079,183 +1115,183 @@ class GFK {
     }
 
     async getInvoice(projectid, invoiceid) {
-    try {
+        try {
 
-        const timesheet = await TimeSheets.findOne(
-            { projectid },
-            {
-                invoices: 1,
-                labor: 1,
-                costs: 1
+            const timesheet = await TimeSheets.findOne(
+                { projectid },
+                {
+                    invoices: 1,
+                    labor: 1,
+                    costs: 1
+                }
+            ).lean();
+
+            if (!timesheet) {
+                throw new Error("Timesheet not found");
             }
-        ).lean();
 
-        if (!timesheet) {
-            throw new Error("Timesheet not found");
+            const invoice = timesheet.invoices.find(
+                i => i.invoiceid === invoiceid
+            );
+
+            if (!invoice) {
+                throw new Error("Invoice not found");
+            }
+
+            // Labor
+            const labor = timesheet.labor
+                .filter(l => invoice.labor.includes(l.laborid))
+                .map(l => {
+
+                    const totalHours =
+                        (new Date(l.timeout) - new Date(l.timein)) /
+                        (1000 * 60 * 60);
+
+                    return {
+                        type: "labor",
+                        date: l.timein,
+                        amount: totalHours * l.laborrate,
+                        totalhours: totalHours,
+                        ...l
+                    };
+
+                });
+
+            // Costs
+            const costs = timesheet.costs
+                .filter(c => invoice.costs.includes(c.costid))
+                .map(c => ({
+                    type: "cost",
+                    date: c.datein,
+                    amount: c.quantity * c.unitcost,
+                    ...c
+                }));
+
+            // Chronological list
+            const items = [...labor, ...costs].sort(
+                (a, b) => new Date(a.date) - new Date(b.date)
+            );
+
+            // Totals
+            const laborTotal = labor.reduce(
+                (sum, item) => sum + item.amount,
+                0
+            );
+
+            const costTotal = costs.reduce(
+                (sum, item) => sum + item.amount,
+                0
+            );
+
+            const invoiceTotal = laborTotal + costTotal;
+
+            return {
+                invoiceid: invoice.invoiceid,
+                dateinvoice: invoice.dateinvoice,
+                status: invoice.status,
+                paymentstatus: invoice.paymentstatus,
+                transactionid: invoice.transactionid,
+                datepaid: invoice.datepaid,
+                items,
+                laborTotal,
+                costTotal,
+                invoiceTotal
+            };
+
+        } catch (err) {
+
+            console.error("Error retrieving invoice:", err);
+
+            return {
+                message: `Error: Could not retrieve invoice - ${err.message}`
+            };
         }
-
-        const invoice = timesheet.invoices.find(
-            i => i.invoiceid === invoiceid
-        );
-
-        if (!invoice) {
-            throw new Error("Invoice not found");
-        }
-
-        // Labor
-        const labor = timesheet.labor
-            .filter(l => invoice.labor.includes(l.laborid))
-            .map(l => {
-
-                const totalHours =
-                    (new Date(l.timeout) - new Date(l.timein)) /
-                    (1000 * 60 * 60);
-
-                return {
-                    type: "labor",
-                    date: l.timein,
-                    amount: totalHours * l.laborrate,
-                    totalhours: totalHours,
-                    ...l
-                };
-
-            });
-
-        // Costs
-        const costs = timesheet.costs
-            .filter(c => invoice.costs.includes(c.costid))
-            .map(c => ({
-                type: "cost",
-                date: c.datein,
-                amount: c.quantity * c.unitcost,
-                ...c
-            }));
-
-        // Chronological list
-        const items = [...labor, ...costs].sort(
-            (a, b) => new Date(a.date) - new Date(b.date)
-        );
-
-        // Totals
-        const laborTotal = labor.reduce(
-            (sum, item) => sum + item.amount,
-            0
-        );
-
-        const costTotal = costs.reduce(
-            (sum, item) => sum + item.amount,
-            0
-        );
-
-        const invoiceTotal = laborTotal + costTotal;
-
-        return {
-            invoiceid: invoice.invoiceid,
-            dateinvoice: invoice.dateinvoice,
-            status: invoice.status,
-            paymentstatus: invoice.paymentstatus,
-            transactionid: invoice.transactionid,
-            datepaid: invoice.datepaid,
-            items,
-            laborTotal,
-            costTotal,
-            invoiceTotal
-        };
-
-    } catch (err) {
-
-        console.error("Error retrieving invoice:", err);
-
-        return {
-            message: `Error: Could not retrieve invoice - ${err.message}`
-        };
     }
-}
 
     async getProposal(projectid, proposalid) {
-    try {
+        try {
 
-        const schedule = await Schedules.findOne(
-            { projectid },
-            {
-                proposals: 1,
-                labor: 1,
-                costs: 1
+            const schedule = await Schedules.findOne(
+                { projectid },
+                {
+                    proposals: 1,
+                    labor: 1,
+                    costs: 1
+                }
+            ).lean();
+
+            if (!schedule) {
+                throw new Error("Schedule not found");
             }
-        ).lean();
 
-        if (!schedule) {
-            throw new Error("Schedule not found");
+            const proposal = schedule.proposals.find(
+                p => p.proposalid === proposalid
+            );
+
+            if (!proposal) {
+                throw new Error("Proposal not found");
+            }
+
+            // Proposal labor
+            const labor = schedule.labor
+                .filter(l => proposal.labor.includes(l.laborid))
+                .map(l => {
+
+                    const hours =
+                        (new Date(l.timeout) - new Date(l.timein)) /
+                        (1000 * 60 * 60);
+
+                    return {
+                        type: "labor",
+                        date: l.timein,
+                        amount: hours * l.laborrate,
+                        ...l
+                    };
+
+                });
+
+            // Proposal costs
+            const costs = schedule.costs
+                .filter(c => proposal.costs.includes(c.costid))
+                .map(c => ({
+                    type: "cost",
+                    date: c.datein,
+                    amount: c.unitcost * c.quantity,
+                    ...c
+                }));
+
+            // Combined timeline
+            const items = [...labor, ...costs].sort(
+                (a, b) => new Date(a.date) - new Date(b.date)
+            );
+
+            const totalAmount = items.reduce(
+                (total, item) => total + item.amount,
+                0
+            );
+
+            return {
+                proposalid: proposal.proposalid,
+                proposalnumber: proposal.proposalnumber,
+                version: proposal.version,
+                status: proposal.status,
+                dateproposal: proposal.dateproposal,
+                expirationdate: proposal.expirationdate,
+                dateapproved: proposal.dateapproved,
+                approvedby: proposal.approvedby,
+                comments: proposal.comments,
+                items,
+                totalAmount
+            };
+
+        } catch (err) {
+            console.error("Error retrieving proposal:", err);
+
+            return {
+                message: `Error: Could not retrieve proposal - ${err.message}`
+            };
         }
-
-        const proposal = schedule.proposals.find(
-            p => p.proposalid === proposalid
-        );
-
-        if (!proposal) {
-            throw new Error("Proposal not found");
-        }
-
-        // Proposal labor
-        const labor = schedule.labor
-            .filter(l => proposal.labor.includes(l.laborid))
-            .map(l => {
-
-                const hours =
-                    (new Date(l.timeout) - new Date(l.timein)) /
-                    (1000 * 60 * 60);
-
-                return {
-                    type: "labor",
-                    date: l.timein,
-                    amount: hours * l.laborrate,
-                    ...l
-                };
-
-            });
-
-        // Proposal costs
-        const costs = schedule.costs
-            .filter(c => proposal.costs.includes(c.costid))
-            .map(c => ({
-                type: "cost",
-                date: c.datein,
-                amount: c.unitcost * c.quantity,
-                ...c
-            }));
-
-        // Combined timeline
-        const items = [...labor, ...costs].sort(
-            (a, b) => new Date(a.date) - new Date(b.date)
-        );
-
-        const totalAmount = items.reduce(
-            (total, item) => total + item.amount,
-            0
-        );
-
-        return {
-            proposalid: proposal.proposalid,
-            proposalnumber: proposal.proposalnumber,
-            version: proposal.version,
-            status: proposal.status,
-            dateproposal: proposal.dateproposal,
-            expirationdate: proposal.expirationdate,
-            dateapproved: proposal.dateapproved,
-            approvedby: proposal.approvedby,
-            comments: proposal.comments,
-            items,
-            totalAmount
-        };
-
-    } catch (err) {
-        console.error("Error retrieving proposal:", err);
-
-        return {
-            message: `Error: Could not retrieve proposal - ${err.message}`
-        };
     }
-}
 
 
 

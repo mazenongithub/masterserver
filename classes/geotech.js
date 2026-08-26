@@ -5,8 +5,8 @@ import { fileURLToPath } from "url";
 import bcrypt from 'bcryptjs'
 import GFK, { GFKCompany, MyProjects, TimeSheets } from './gfk.js';
 import Notifications from './notifications.js';
-
-
+import db from '../config/db.js';
+import crypto from "crypto";
 
 const ContactSchema = new mongoose.Schema(
     {
@@ -206,6 +206,94 @@ class Geotech {
         }
     }
 
+    async compareLoginCode(loginCode, clientID) {
+    try {
+        const [rows] = await db.execute(
+            `SELECT Auth_ID, AuthCode, DateExp, ATTEMPTS
+             FROM Authorization
+             WHERE Client_ID = ?
+               AND USED = 0
+             ORDER BY Auth_ID DESC
+             LIMIT 1`,
+            [clientID.toString()]
+        );
+
+        if (rows.length === 0) {
+            return false;
+        }
+
+        const auth = rows[0];
+
+        // Check expiration
+        if (new Date() > new Date(auth.DateExp)) {
+            return false;
+        }
+
+        // Check maximum attempts
+        if (auth.ATTEMPTS >= 5) {
+            return false;
+        }
+
+        // Compare submitted code with stored bcrypt hash
+        const valid = await bcrypt.compare(loginCode, auth.AuthCode);
+
+        if (!valid) {
+            await db.execute(
+                `UPDATE Authorization
+                 SET ATTEMPTS = ATTEMPTS + 1
+                 WHERE Auth_ID = ?`,
+                [auth.Auth_ID]
+            );
+
+            return false;
+        }
+
+        // Code is valid - immediately mark it as used
+        await db.execute(
+            `UPDATE Authorization
+             SET USED = 1
+             WHERE Auth_ID = ?`,
+            [auth.Auth_ID]
+        );
+
+        return true;
+
+    } catch (error) {
+        console.error("compareLoginCode error:", error);
+        throw error;
+    }
+}
+
+    async getLoginCode(Client_ID) {
+      
+       
+        try {
+            const code = crypto.randomInt(100000, 1000000).toString();
+
+            const hash = await bcrypt.hash(code, 12);
+
+            const expires = new Date(Date.now() + 10 * 60 * 1000);
+
+           
+            await db.execute(
+                `INSERT INTO Authorization
+                (Client_ID, AuthCode, DateExp)
+             VALUES (?, ?, ?)`,
+                [Client_ID, hash, expires]
+            );
+
+            return {
+                loginCode: code,
+                DateExp: expires,
+                Client_ID
+            };
+
+        } catch (error) {
+            console.error("getLoginCode error:", error);
+            throw error;
+        }
+    }
+
     async HandlePaymentSucceeded(paymentIntent) {
         try {
             const notification = new Notifications();
@@ -278,7 +366,7 @@ class Geotech {
             console.log(
                 `Invoice ${invoiceid} marked paid`
             );
-            return {invoice,paymentCost}
+            return { invoice, paymentCost }
 
         } catch (err) {
 
