@@ -70,6 +70,7 @@ const port = process.env.PORT || 3000;
 
 
 const allowedOrigins = [
+  'http://localhost:61622',
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3003',
@@ -93,8 +94,6 @@ app.use(cors({
   },
   credentials: true,
 }));
-
-
 
 
 
@@ -138,7 +137,7 @@ app.post("/stripe/webhook",
         process.env.STRIPE_WEBHOOK_SECRET
       );
 
-      console.log("142", event.type)
+  
 
       switch (event.type) {
 
@@ -214,28 +213,6 @@ if (!isProduction) {
 }
 
 expressWs(app, server);
-
-
-
-// ...your routes go here...
-// Create the actual server
-
-;
-
-// Attach express-ws to THAT server
-
-
-
-
-
-
-
-
-app.get("/test-ws-http", (req, res) => {
-  console.log("HTTP TEST REACHED");
-  res.send("HTTP TEST WORKS");
-});
-
 
 
 app.get("/", (req, res) => {

@@ -23,6 +23,142 @@ export default (app) => {
 
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); '/'
 
+
+    app.post('/geotech/createclient', async (req, res) => {
+
+        try {
+
+            const gfk = new GFK();
+
+            let {
+                clientid,
+                emailaddress,
+                google,
+                apple
+            } = req.body;
+
+
+            // --------------------------------------------------
+            // Validate Client ID and Apple/Google provider
+            // --------------------------------------------------
+
+            if (!clientid) {
+                return res.status(400).json({
+                    error: 'Geotech Client ID is required.'
+                });
+            }
+
+            // Require exactly one provider
+            if ((!google && !apple) || (google && apple)) {
+                return res.status(400).json({
+                    error: 'A valid Google or Apple client is required.'
+                });
+            }
+
+
+            // --------------------------------------------------
+            // Validate email if provided
+            // --------------------------------------------------
+
+            if (emailaddress && !validateEmail(emailaddress)) {
+                return res.status(400).json({
+                    error: `Invalid email address: ${emailaddress}`
+                });
+            }
+
+
+            // --------------------------------------------------
+            // Determine provider
+            // --------------------------------------------------
+
+            const provider = google ? 'google' : 'apple';
+            const providerId = google || apple;
+
+            const geotech = new Geotech();
+
+            if (provider === 'apple') {
+                apple = await geotech.hashPassword(providerId);
+            } else if (provider === 'google') {
+                google = await geotech.hashPassword(providerId);
+            }
+
+
+
+            // --------------------------------------------------
+            // Create client object
+            // ---
+            // -----------------------------------------------
+
+            // create a hash of google and apple before creating client i store the hash not the actual
+
+            const createClient = {
+                clientid,
+                emailaddress: emailaddress || '',
+                google: google || '',
+                apple: apple || ''
+            };
+
+
+            console.log('Creating client:', {
+                clientid,
+                emailaddress,
+                provider,
+                providerId
+            });
+
+
+            // --------------------------------------------------
+            // Create the new client
+            // --------------------------------------------------
+
+            const newClient = await gfk.addClient(createClient);
+
+
+            if (!newClient || !newClient._id) {
+                return res.status(400).json({
+                    error: 'Could not create new client.'
+                });
+            }
+
+
+            // --------------------------------------------------
+            // Mongo client ID
+            // --------------------------------------------------
+
+            const client_id = newClient._id.toString();
+
+
+            // --------------------------------------------------
+            // Return client
+            // --------------------------------------------------
+
+            return res.status(200).json({
+                newClient,
+                status: 'served',
+                client_id,
+                clientid,
+                emailaddress,
+                provider,
+                providerId
+            });
+
+
+        } catch (error) {
+
+            console.error(
+                'Client creation error:',
+                error
+            );
+
+            return res.status(500).json({
+                error: 'Unable to create client.'
+            });
+        }
+
+    });
+
+
+
     app.post(`/geotech/registernewclient`, async (req, res) => {
         try {
             const gfk = new GFK();
@@ -43,13 +179,13 @@ export default (app) => {
                 });
             }
 
+            const createClient = { clientid, emailaddress }
+
             // Create the new client
             const newClient = await gfk.addClient(
-                clientid,
-                emailaddress
+                createClient
             );
 
-            console.log(newClient, "52", clientid, emailaddress)
 
             if (!newClient || !newClient._id) {
                 return res.status(400).json({
@@ -347,40 +483,83 @@ export default (app) => {
     });
 
 
+
     app.post('/geotech/login', async (req, res) => {
         const geotech = new Geotech();
-        const clientInfo = req.body; // no need to spread
+
+        const {
+            google,
+            apple,
+            clientid,
+            emailaddress
+        } = req.body;
+
+        const clientInfo = {
+            google,
+            apple,
+            clientid,
+            emailaddress
+        };
+
 
 
         try {
-            // 1️⃣ Attempt client login
-            const result = await geotech.clientLogin(clientInfo);
+            // Attempt client login
+            const getClient = await geotech.clientLogin(clientInfo);
+    
+            // Client was found
+            if (getClient.client) {
 
-            // 2️⃣ Login failed
-            if (!result.client) {
-                return res.status(400).json({ message: result.message || 'Login failed' });
+                const client = getClient.client;
+
+                // Make sure the client has an ID
+                if (!client._id) {
+                    return res.status(400).json({
+                        message: 'Client ID is missing'
+                    });
+                }
+
+                // Save client ID in session
+                req.session.clientID = client._id.toString();
+                await req.session.save();
+
+                // Load client projects
+                const projects = await geotech.findProjectsByClientID(
+                    client._id.toString()
+                );
+
+                // Return client and projects
+                return res.status(200).json({
+                    client,
+                    projects
+                });
             }
 
-            const client = result.client;
+            // Client does not exist, but provider identity was found
+            if (getClient.status === 'Register') {
 
+                return res.status(200).json({
+                    status: 'Register',
+                    providerId: getClient.providerId,
+                    provider: getClient.provider,
+                    register:getClient.register
+                });
+            }
 
-            // 3️⃣ Save session
-            req.session.clientID = client._id;
-            await req.session.save();
-
-            // 4️⃣ Load client projects
-            const projects = await geotech.findProjectsByClientID(client._id.toString());
-
-            // 5️⃣ Return client and projects
-            return res.status(200).json({ client, projects });
+            // Client was not found and no registration information exists
+            return res.status(400).json({
+                message: 'Client not found'
+            });
 
         } catch (err) {
+
             console.error('Error during client login:', err);
+
             return res.status(500).json({
-                message: `Could not log in client - ${err.message || err}`,
+                message: `Could not log in client - ${err.message || err}`
             });
         }
-    });
+    })
 
     app.get("/geotech/:clientid/logout", (req, res) => {
         const { clientid } = req.params;
@@ -508,14 +687,14 @@ export default (app) => {
             });
 
             // Send success response
-            res.status(200).json({ success: true, user: savedUser, message: `Profile Saved ${createdAt}` });
+            res.status(200).json({ success: true, user: savedUser, message: `Profile Saved ${createdAt} ` });
         } catch (err) {
             console.error('Error saving profile:', err);
 
             // Send error response
             res.status(500).json({
                 success: false,
-                message: `Could not save profile: ${err.message || err}`
+                message: `Could not save profile: ${err.message || err} `
             });
         }
     });
@@ -584,7 +763,7 @@ export default (app) => {
             }
 
             return res.status(200).json({
-                message: `Project saved ${createdAt}`,
+                message: `Project saved ${createdAt} `,
                 updatedproject: {
                     title: savedProject.title,
                     sow: savedProject.sow,
@@ -597,7 +776,7 @@ export default (app) => {
         } catch (err) {
             console.error("Save project error:", err);
             return res.status(500).json({
-                error: `Could not save project: ${err.message || err}`
+                error: `Could not save project: ${err.message || err} `
             });
         }
     });
@@ -722,7 +901,7 @@ export default (app) => {
 
             res.json({
                 projects: clientProjects,
-                message: `Projects saved ${createdAt}`
+                message: `Projects saved ${createdAt} `
             });
 
 

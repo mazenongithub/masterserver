@@ -761,7 +761,7 @@ class GFK {
     }
 
 
-    async addClient( clientid, emailaddress) {
+    async addClient(newClient) {
         try {
             const gfkCompany = await GFKCompany.findOne({
                 company: 'gfk'
@@ -770,11 +770,6 @@ class GFK {
             if (!gfkCompany) {
                 return null;
             }
-
-            const newClient = {
-                clientid: clientid,
-                emailaddress: emailaddress
-            };
 
             // Add client to the embedded clients array
             gfkCompany.clients.push(newClient);

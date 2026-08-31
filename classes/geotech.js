@@ -583,6 +583,7 @@ class Geotech {
 
     async clientLogin(myClient) {
         try {
+            
             // Must have at least one provider
             if (!myClient.apple && !myClient.google) {
                 return { message: 'Missing Apple or Google ID' };
@@ -590,6 +591,7 @@ class Geotech {
 
             // Determine provider
             const provider = myClient.apple ? 'apple' : 'google';
+            
             const providerId = myClient[provider];
 
             // Look for existing client
@@ -602,19 +604,33 @@ class Geotech {
 
             if (existingClient) {
                 // ✅ Wrap in object with "client" property
-                return existingClient;
-            }
+                return {status:'login', client: existingClient};
+            } 
+
+           
 
             // Ensure client ID exists before registration
-            if (!myClient.clientid) {
-                return { message: 'Cannot register client — client ID missing' };
+            if (!myClient.clientid && providerId) {
+
+                let register = "";
+                if (provider) {
+                    register += `Provider found, it is ${provider}, `
+                }
+
+                if(providerId) {
+                    register += `ProviderId found client ready to register, `
+                }
+
+                register += ` create a ClientID to register `
+                return { status: `Register`,
+                    provider,
+                    providerId,
+                    register
+                 };
             }
 
-            // Register new client
-            const newClient = await this.registerNewUser(myClient);
-
-            // ✅ Wrap in object with "client" property
-            return newClient;
+    
+      
 
         } catch (err) {
             console.error('Client login error:', err);
@@ -647,7 +663,7 @@ class Geotech {
             for (const client of allClients) {
                 const isMatch = bcrypt.compareSync(appleId, client.apple);
                 if (isMatch) {
-                    return { client }; // Found
+                    return  client // Found
                 }
             }
 
@@ -681,7 +697,7 @@ class Geotech {
             for (const client of allClients) {
                 const isMatch = bcrypt.compareSync(googleId, client.google);
                 if (isMatch) {
-                    return { client }; // Found
+                    return client // Found
                 }
             }
 
