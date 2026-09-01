@@ -9,12 +9,11 @@ import GFK, { GFKCompany, MyProjects, Schedules } from '../classes/gfk.js';
 import validategeotechclient from '../middleware/validategeotechclient.js'
 import validateProfile from "../middleware/validateprofile.js";
 import Stripe from "stripe";
-import express from 'express';
 import compareProjects from "../middleware/compareprojects.js";
 import compareProject from "../middleware/compareproject.js";
 import Notifications from "../classes/notifications.js";
 import { validateEmail, formatDateExp } from '../functions/index.js'
-import { promiseHooks } from "v8";
+
 export default (app) => {
 
     // Multer storage
@@ -99,14 +98,7 @@ export default (app) => {
             };
 
 
-            console.log('Creating client:', {
-                clientid,
-                emailaddress,
-                provider,
-                providerId
-            });
-
-
+        
             // --------------------------------------------------
             // Create the new client
             // --------------------------------------------------
@@ -126,6 +118,9 @@ export default (app) => {
             // --------------------------------------------------
 
             const client_id = newClient._id.toString();
+            // Save client ID in session
+            req.session.clientID = client_id;
+            await req.session.save();
 
 
             // --------------------------------------------------
@@ -249,6 +244,8 @@ export default (app) => {
                 });
             }
 
+            const deleteCode = await geotech.deleteLoginCode(client_id)
+
             const [client, projects] = await Promise.all([
                 geotech.findClientByID(client_id),
                 geotech.findProjectsByClientID(client_id)
@@ -259,6 +256,10 @@ export default (app) => {
                     error: "Client not found."
                 });
             }
+
+             // Save client ID in session
+            req.session.clientID = client._id.toString();
+            await req.session.save();
 
             return res.json({
                 client,
@@ -506,7 +507,7 @@ export default (app) => {
         try {
             // Attempt client login
             const getClient = await geotech.clientLogin(clientInfo);
-    
+
             // Client was found
             if (getClient.client) {
 
@@ -542,7 +543,7 @@ export default (app) => {
                     status: 'Register',
                     providerId: getClient.providerId,
                     provider: getClient.provider,
-                    register:getClient.register
+                    register: getClient.register
                 });
             }
 
