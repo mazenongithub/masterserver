@@ -225,8 +225,7 @@ const gfkSchema = new mongoose.Schema({
         zipcode: String,
         emailaddress: String,
         phonenumber: String,
-        apple: String,
-        google: String,
+        uid: String,
         profileurl: String
 
     }]
@@ -401,6 +400,27 @@ class GFK {
 
     async getInvoiceTotal(projectid, invoiceid) {
 
+    }
+
+    async getExistingClient(uid) {
+        try {
+
+            const result = await GFKCompany.findOne(
+                { "clients.uid": uid },
+                { "clients.$": 1 }
+            );
+
+            if (!result || !result.clients || result.clients.length === 0) {
+                return null;
+            }
+
+            return result.clients[0];
+
+        } catch (error) {
+
+            console.error("Error retrieving existing client:", error);
+            throw error;
+        }
     }
 
     async sendContactEmail(values) {

@@ -7,6 +7,7 @@ import GFK, { GFKCompany, MyProjects, TimeSheets } from './gfk.js';
 import Notifications from './notifications.js';
 import db from '../config/db.js';
 import crypto from "crypto";
+import { getAuth } from '../config/firebase.js'
 
 const ContactSchema = new mongoose.Schema(
     {
@@ -90,7 +91,27 @@ const ContactSchema = new mongoose.Schema(
 );
 
 const GeotechContactUs = mongoose.model("GeotechContactUs", ContactSchema);
+
 class Geotech {
+
+    async getFireBaseUser(authToken) {
+
+        try {
+            if (!authToken) {
+                throw new Error("Firebase authentication token is required.");
+            }
+
+            const decodedToken = await getAuth().verifyIdToken(authToken);
+
+            return decodedToken;
+
+        } catch (error) {
+            console.error("getFireBaseUser error:", error);
+            throw error;
+        }
+
+
+    }
 
 
     async calculateInvoiceTotal(projectid, invoiceid) {
@@ -283,7 +304,7 @@ class Geotech {
             throw err;
         }
     }
-    
+
     async getLoginCode(Client_ID) {
 
 
@@ -601,54 +622,38 @@ class Geotech {
     }
 
 
-    async clientLogin(myClient) {
+
+
+    async clientLogin(uid) {
+
         try {
 
             // Must have at least one provider
-            if (!myClient.apple && !myClient.google) {
-                return { message: 'Missing Apple or Google ID' };
+            if (!uid) {
+                return { message: `Firebase uid string missing` }
             }
 
-            // Determine provider
-            const provider = myClient.apple ? 'apple' : 'google';
-
-            const providerId = myClient[provider];
-
+         
+            const gfk = new GFK();
             // Look for existing client
-            let existingClient = null;
-            if (provider === 'apple') {
-                existingClient = await this.getAppleUser(providerId);
-            } else {
-                existingClient = await this.getGoogleUser(providerId);
-            }
-
+            let existingClient = await gfk.getExistingClient(uid);
+            
             if (existingClient) {
                 // ✅ Wrap in object with "client" property
-                return { status: 'login', client: existingClient };
+                return { status: 'served', client: existingClient };
             }
-
-
 
             // Ensure client ID exists before registration
-            if (!myClient.clientid && providerId) {
+          
 
-                let register = "";
-                if (provider) {
-                    register += `Provider found, it is ${provider}, `
-                }
-
-                if (providerId) {
-                    register += `ProviderId found client ready to register, `
-                }
-
-                register += ` create a ClientID to register `
+                let register = ` register new client  `
                 return {
-                    status: `Register`,
-                    provider,
-                    providerId,
-                    register
+                    status: `register`,
+                    uid,
+                    register,
+                
                 };
-            }
+            
 
 
 

@@ -13,6 +13,8 @@ import compareProjects from "../middleware/compareprojects.js";
 import compareProject from "../middleware/compareproject.js";
 import Notifications from "../classes/notifications.js";
 import { validateEmail, formatDateExp } from '../functions/index.js'
+import { getAuth } from '../config/firebase.js';
+import { STATUS_CODES } from "http";
 
 export default (app) => {
 
@@ -27,13 +29,11 @@ export default (app) => {
 
         try {
 
+            const geotech = new Geotech();
             const gfk = new GFK();
 
             let {
-                clientid,
-                emailaddress,
-                google,
-                apple
+                firstname, lastname, emailaddress, profileurl, phonenumber, authToken, clientid
             } = req.body;
 
 
@@ -43,62 +43,29 @@ export default (app) => {
 
             if (!clientid) {
                 return res.status(400).json({
-                    error: 'Geotech Client ID is required.'
+                    error: 'Client ID is required to create a client'
                 });
             }
 
-            // Require exactly one provider
-            if ((!google && !apple) || (google && apple)) {
-                return res.status(400).json({
-                    error: 'A valid Google or Apple client is required.'
-                });
-            }
-
-
+      
             // --------------------------------------------------
             // Validate email if provided
             // --------------------------------------------------
 
             if (emailaddress && !validateEmail(emailaddress)) {
                 return res.status(400).json({
-                    error: `Invalid email address: ${emailaddress}`
+                    error: `Email Address missing or is invalid ${emailaddress}`
                 });
             }
 
-
-            // --------------------------------------------------
-            // Determine provider
-            // --------------------------------------------------
-
-            const provider = google ? 'google' : 'apple';
-            const providerId = google || apple;
-
-            const geotech = new Geotech();
-
-            if (provider === 'apple') {
-                apple = await geotech.hashPassword(providerId);
-            } else if (provider === 'google') {
-                google = await geotech.hashPassword(providerId);
-            }
-
-
-
-            // --------------------------------------------------
-            // Create client object
-            // ---
-            // -----------------------------------------------
-
-            // create a hash of google and apple before creating client i store the hash not the actual
+            let getUser = await geotech.getFireBaseUser(authToken)
+            const uid = getUser.uid;
 
             const createClient = {
-                clientid,
-                emailaddress: emailaddress || '',
-                google: google || '',
-                apple: apple || ''
+               firstname, lastname, emailaddress, profileurl, phonenumber, uid, clientid
             };
 
 
-        
             // --------------------------------------------------
             // Create the new client
             // --------------------------------------------------
@@ -130,11 +97,6 @@ export default (app) => {
             return res.status(200).json({
                 newClient,
                 status: 'served',
-                client_id,
-                clientid,
-                emailaddress,
-                provider,
-                providerId
             });
 
 
@@ -257,7 +219,7 @@ export default (app) => {
                 });
             }
 
-             // Save client ID in session
+            // Save client ID in session
             req.session.clientID = client._id.toString();
             await req.session.save();
 
@@ -489,36 +451,34 @@ export default (app) => {
         const geotech = new Geotech();
 
         const {
-            google,
-            apple,
-            clientid,
-            emailaddress
+            firstname, lastname, emailaddress, profileurl, phonenumber, authToken
         } = req.body;
 
-        const clientInfo = {
-            google,
-            apple,
-            clientid,
-            emailaddress
-        };
 
 
 
         try {
             // Attempt client login
-            const getClient = await geotech.clientLogin(clientInfo);
+            const getUser = await geotech.getFireBaseUser(authToken)
+            const uid = getUser.uid;
+
+            const clientInfo = {
+                uid,
+                emailaddress,
+                firstname, lastname, emailaddress, profileurl, phonenumber
+            };
+
+
+
+
+            const getClient = await geotech.clientLogin(uid);
 
             // Client was found
-            if (getClient.client) {
+            if (getClient.status === 'served') {
 
                 const client = getClient.client;
+                const status = getClient.status;
 
-                // Make sure the client has an ID
-                if (!client._id) {
-                    return res.status(400).json({
-                        message: 'Client ID is missing'
-                    });
-                }
 
                 // Save client ID in session
                 req.session.clientID = client._id.toString();
@@ -532,25 +492,23 @@ export default (app) => {
                 // Return client and projects
                 return res.status(200).json({
                     client,
-                    projects
+                    projects,
+                    status
                 });
-            }
-
-            // Client does not exist, but provider identity was found
-            if (getClient.status === 'Register') {
+            } else if (getClient.status === 'register') {
 
                 return res.status(200).json({
-                    status: 'Register',
-                    providerId: getClient.providerId,
-                    provider: getClient.provider,
+                    status: getClient.status,
                     register: getClient.register
                 });
-            }
+            } else {
 
-            // Client was not found and no registration information exists
-            return res.status(400).json({
-                message: 'Client not found'
-            });
+                // Client was not found and no registration information exists
+                return res.status(400).json({
+                    message: 'Client does not have a status '
+                });
+
+            }
 
         } catch (err) {
 
