@@ -6,11 +6,8 @@ import path from 'path';
 import fs from 'fs';
 import crypto from "crypto";
 import GFK, { GFKCompany, MyProjects, Schedules } from '../classes/gfk.js';
-import validategeotechclient from '../middleware/validategeotechclient.js'
-import validateProfile from "../middleware/validateprofile.js";
+import {compareProjects, validateClientIdentityChange, validateClientRegister, validateProfile, checkClient, checkProjectClient, compareProject} from '../middleware/geotech-mw.js'
 import Stripe from "stripe";
-import compareProjects from "../middleware/compareprojects.js";
-import compareProject from "../middleware/compareproject.js";
 import Notifications from "../classes/notifications.js";
 import { validateEmail, formatDateExp } from '../functions/index.js'
 import { getAuth } from '../config/firebase.js';
@@ -25,7 +22,7 @@ export default (app) => {
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); '/'
 
 
-    app.post('/geotech/createclient', async (req, res) => {
+    app.post('/geotech/createclient', validateClientRegister,  async (req, res) => {
 
         try {
 
@@ -37,27 +34,7 @@ export default (app) => {
             } = req.body;
 
 
-            // --------------------------------------------------
-            // Validate Client ID and Apple/Google provider
-            // --------------------------------------------------
-
-            if (!clientid) {
-                return res.status(400).json({
-                    error: 'Client ID is required to create a client'
-                });
-            }
-
-      
-            // --------------------------------------------------
-            // Validate email if provided
-            // --------------------------------------------------
-
-            if (emailaddress && !validateEmail(emailaddress)) {
-                return res.status(400).json({
-                    error: `Email Address missing or is invalid ${emailaddress}`
-                });
-            }
-
+    
             let getUser = await geotech.getFireBaseUser(authToken)
             const uid = getUser.uid;
 
@@ -65,13 +42,11 @@ export default (app) => {
                firstname, lastname, emailaddress, profileurl, phonenumber, uid, clientid
             };
 
-
             // --------------------------------------------------
             // Create the new client
             // --------------------------------------------------
 
             const newClient = await gfk.addClient(createClient);
-
 
             if (!newClient || !newClient._id) {
                 return res.status(400).json({
@@ -301,7 +276,7 @@ export default (app) => {
 
 
 
-    app.post("/geotech/uploadprofilephoto", upload.single("profilephoto"), async (req, res) => {
+    app.post("/geotech/uploadprofilephoto", checkClient, upload.single("profilephoto"), async (req, res) => {
         try {
 
 
@@ -414,16 +389,12 @@ export default (app) => {
         }
     });
 
-    app.get("/geotech/checkuser", async (req, res) => {
+    app.get("/geotech/checkuser", checkClient,  async (req, res) => {
         const geotech = new Geotech();
 
         try {
-            // 1️⃣ Check session
-            const clientID = req.session?.clientID;
-
-            if (!clientID) {
-                return res.status(401).json({ message: "Not authenticated" });
-            }
+          
+            const clientID = req.session.clientID;
 
             // 2️⃣ Fetch client
             const client = await geotech.findClientByID(clientID);
@@ -594,8 +565,8 @@ export default (app) => {
 
             if (amount <= 0) {
                 throw new Error(
-                    "Invoice has already been paid."
-                );
+                    "Invoice has a balance of 0."
+                )
             }
 
             const paymentIntent = await stripe.paymentIntents.create({
@@ -624,7 +595,7 @@ export default (app) => {
         }
     });
 
-    app.post('/geotech/saveprofile', validateProfile, validategeotechclient, async (req, res) => {
+    app.post('/geotech/saveprofile', checkClient, validateProfile, validateClientIdentityChange, async (req, res) => {
         const geotech = new Geotech();
 
 
@@ -658,9 +629,10 @@ export default (app) => {
         }
     });
 
-    app.post('/geotech/:companyid/saveproject/:projectid', compareProject, async (req, res) => {
+    app.post('/geotech/:client_id/saveproject/:projectid', checkProjectClient, compareProject, async (req, res) => {
         try {
-            const { companyid, projectid } = req.params;
+            const { projectid, companyid } = req.params;
+            
             const { updatedProject } = req.body;
 
 

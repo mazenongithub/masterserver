@@ -423,6 +423,48 @@ class GFK {
         }
     }
 
+    async findClientByClientID(clientid) {
+    try {
+        const gfkCompany = await GFKCompany.findOne({
+            company: 'gfk',
+            'clients.clientid': clientid
+        });
+
+        if (!gfkCompany) {
+            return null;
+        }
+
+        const client = gfkCompany.clients.find(
+            client => client.clientid === clientid
+        );
+
+        return client || null;
+
+    } catch (err) {
+        throw new Error(
+            `Could not find client by clientid: ${err.message}`
+        );
+    }
+}
+
+    async findClientByEmail(emailaddress) {
+        try {
+            const gfkCompany = await GFKCompany.findOne({
+                company: 'gfk',
+                'clients.emailaddress': emailaddress
+            });
+
+            if (gfkCompany) {
+                return true;
+            }
+
+            return false;
+
+        } catch (err) {
+            throw new Error(`Could not find client by email: ${err.message}`);
+        }
+    }
+
     async sendContactEmail(values) {
         let {
             emailaddress,
@@ -780,9 +822,9 @@ class GFK {
         }
     }
 
-
     async addClient(newClient) {
         try {
+
             const gfkCompany = await GFKCompany.findOne({
                 company: 'gfk'
             });
@@ -791,16 +833,22 @@ class GFK {
                 return null;
             }
 
-            // Add client to the embedded clients array
+            // Make sure clients is an array
+            if (!Array.isArray(gfkCompany.clients)) {
+                gfkCompany.clients = [];
+            }
+
+            // Add client to embedded clients array
             gfkCompany.clients.push(newClient);
 
-            // Save the document
+            // Save document
             await gfkCompany.save();
 
-            // Return the newly created embedded client
+            // Return newly created embedded client
             return gfkCompany.clients[gfkCompany.clients.length - 1];
 
         } catch (error) {
+
             console.error("Error adding client:", error);
             throw error;
         }
