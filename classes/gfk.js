@@ -398,6 +398,31 @@ const Schedules = mongoose.model("schedules", ScheduleSchema)
 
 class GFK {
 
+    async deleteProject(projectid) {
+
+        try {
+
+            let deleteproject = await MyProjects.updateOne(
+                { "projects.projectid": projectid },
+                {
+                    $pull: {
+                        projects: {
+                            projectid
+                        }
+                    }
+                }
+            )
+
+            return deleteproject;
+
+
+
+
+        } catch (err) {
+            return (`Cannot delete project ${err}`)
+        }
+    }
+
     async getInvoiceTotal(projectid, invoiceid) {
 
     }
@@ -424,28 +449,28 @@ class GFK {
     }
 
     async findClientByClientID(clientid) {
-    try {
-        const gfkCompany = await GFKCompany.findOne({
-            company: 'gfk',
-            'clients.clientid': clientid
-        });
+        try {
+            const gfkCompany = await GFKCompany.findOne({
+                company: 'gfk',
+                'clients.clientid': clientid
+            });
 
-        if (!gfkCompany) {
-            return null;
+            if (!gfkCompany) {
+                return null;
+            }
+
+            const client = gfkCompany.clients.find(
+                client => client.clientid === clientid
+            );
+
+            return client || null;
+
+        } catch (err) {
+            throw new Error(
+                `Could not find client by clientid: ${err.message}`
+            );
         }
-
-        const client = gfkCompany.clients.find(
-            client => client.clientid === clientid
-        );
-
-        return client || null;
-
-    } catch (err) {
-        throw new Error(
-            `Could not find client by clientid: ${err.message}`
-        );
     }
-}
 
     async findClientByEmail(emailaddress) {
         try {

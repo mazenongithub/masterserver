@@ -6,7 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from "crypto";
 import GFK, { GFKCompany, MyProjects, Schedules } from '../classes/gfk.js';
-import {compareProjects, validateClientIdentityChange, validateClientRegister, validateProfile, checkClient, checkProjectClient, compareProject} from '../middleware/geotech-mw.js'
+import { compareProjects, validateClientIdentityChange, validateClientRegister, validateProfile, checkClient, checkProjectClient, compareProject, checkProjectCanDelete } from '../middleware/geotech-mw.js'
 import Stripe from "stripe";
 import Notifications from "../classes/notifications.js";
 import { validateEmail, formatDateExp } from '../functions/index.js'
@@ -22,7 +22,7 @@ export default (app) => {
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); '/'
 
 
-    app.post('/geotech/createclient', validateClientRegister,  async (req, res) => {
+    app.post('/geotech/createclient', validateClientRegister, async (req, res) => {
 
         try {
 
@@ -34,12 +34,12 @@ export default (app) => {
             } = req.body;
 
 
-    
+
             let getUser = await geotech.getFireBaseUser(authToken)
             const uid = getUser.uid;
 
             const createClient = {
-               firstname, lastname, emailaddress, profileurl, phonenumber, uid, clientid
+                firstname, lastname, emailaddress, profileurl, phonenumber, uid, clientid
             };
 
             // --------------------------------------------------
@@ -389,11 +389,11 @@ export default (app) => {
         }
     });
 
-    app.get("/geotech/checkuser", checkClient,  async (req, res) => {
+    app.get("/geotech/checkuser", checkClient, async (req, res) => {
         const geotech = new Geotech();
 
         try {
-          
+
             const clientID = req.session.clientID;
 
             // 2️⃣ Fetch client
@@ -632,7 +632,7 @@ export default (app) => {
     app.post('/geotech/:client_id/saveproject/:projectid', checkProjectClient, compareProject, async (req, res) => {
         try {
             const { projectid, companyid } = req.params;
-            
+
             const { updatedProject } = req.body;
 
 
@@ -711,6 +711,53 @@ export default (app) => {
             });
         }
     });
+
+    app.get('/geotech/deleteproject/:projectid', checkProjectCanDelete, async (req, res) => {
+        try {
+            const gfk = new GFK();
+            const { projectid } = req.params;
+
+            const result = await gfk.deleteProject(projectid);
+
+            // Project was not found, but this is not an error.
+            // It may have only existed locally and was never saved.
+            if (result.matchedCount === 0) {
+                return res.status(200).send({
+                    success: true,
+                    status: "not_found",
+                    message: "Project was not found and may not have been saved.",
+                    projectid
+                });
+            }
+
+            if (result.modifiedCount === 1) {
+                return res.status(200).send({
+                    success: true,
+                    status: "deleted",
+                    message: "Project deleted successfully.",
+                    projectid
+                });
+            }
+
+            return res.status(200).send({
+                success: true,
+                status: "not_modified",
+                message: "Project was found but was not modified.",
+                projectid
+            });
+
+        } catch (err) {
+            console.error(err);
+
+            return res.status(500).send({
+                success: false,
+                status: "error",
+                Error: `Could not delete project: ${err.message}`
+            });
+        }
+    });
+
+
     app.post('/geotech/:companyid/saveprojects/:clientid', compareProjects, async (req, res) => {
         try {
             const { companyid, clientid } = req.params;
@@ -722,24 +769,24 @@ export default (app) => {
             } = req.projectChanges;
 
 
-            // 1. Delete removed projects
-            if (deleted.length > 0) {
+            // 1. Delete removed projects cannot be used
+            // if (deleted.length > 0) {
 
-                const deletedIds = deleted.map(
-                    project => project.projectid
-                );
+            //     const deletedIds = deleted.map(
+            //         project => project.projectid
+            //     );
 
-                await MyProjects.updateOne(
-                    { companyid },
-                    {
-                        $pull: {
-                            projects: {
-                                projectid: { $in: deletedIds }
-                            }
-                        }
-                    }
-                );
-            }
+            //     await MyProjects.updateOne(
+            //         { companyid },
+            //         {
+            //             $pull: {
+            //                 projects: {
+            //                     projectid: { $in: deletedIds }
+            //                 }
+            //             }
+            //         }
+            //     );
+            // }
 
 
             // 2. Update existing projects

@@ -2,6 +2,72 @@ import GFK, { GFKCompany, MyProjects } from '../classes/gfk.js';
 import mongoose from 'mongoose';
 import { validateEmail } from '../functions/index.js'
 
+
+export async function checkProjectCanDelete(req, res, next) {
+    const gfk = new GFK();
+    const { projectid } = req.params;
+
+    try {
+        const [
+            borings = [],
+            fieldreports = [],
+            compactioncurves = [],
+            seismic = [],
+            ptslab = [],
+            slope = [],
+            timesheet = [],
+            schedule = []
+        ] = await Promise.all([
+            gfk.loadBorings(projectid).catch(() => []),
+            gfk.loadFieldReports(projectid).catch(() => []),
+            gfk.loadCompactionCurves(projectid).catch(() => []),
+            gfk.loadSeismic(projectid).catch(() => []),
+            gfk.loadPTSlab(projectid).catch(() => []),
+            gfk.loadSlope(projectid).catch(() => []),
+            gfk.loadTimesheet(projectid).catch(() => []),
+            gfk.loadSchedule(projectid).catch(() => [])
+        ]);
+
+        const properties = {
+            borings,
+            fieldreports,
+            compactioncurves,
+            seismic,
+            ptslab,
+            slope,
+            timesheet,
+            schedule
+        };
+
+        // Find which properties contain data
+        const existingProperties = Object.entries(properties)
+            .filter(([key, value]) => Array.isArray(value) && value.length > 0)
+            .map(([key]) => key);
+
+        if (existingProperties.length > 0) {
+            return res.status(409).send({
+                success: false,
+                status: "cannot_delete",
+                Error: "Project contains data and cannot be deleted.",
+                projectid,
+                properties: existingProperties
+            });
+        }
+
+        next();
+
+    } catch (err) {
+        console.error(err);
+
+        return res.status(500).send({
+            success: false,
+            status: "error",
+            Error: `Could not verify project deletion: ${err.message}`
+        });
+    }
+}
+
+
 export async function checkProjectClient(req, res, next) {
     const { projectid, client_id } = req.params;
     const sessionClientID = req.session.clientID
