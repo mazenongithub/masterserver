@@ -46,17 +46,17 @@ export default (app) => {
   const uploadFieldImage = multer({ storage: createStorage('uploads/gfk/fieldimages') });
   const uploadLogDraft = multer({ storage: createStorage('uploads/gfk/logdraft') });
 
-   app.ws("/test-ws", (ws, req) => {
-        console.log("🔥 TEST WEBSOCKET CONNECTED");
+  app.ws("/test-ws", (ws, req) => {
+    console.log("🔥 TEST WEBSOCKET CONNECTED");
 
-        ws.send(JSON.stringify({
-            type: "test",
-            message: "WebSocket is working"
-        }));
-    });
- 
+    ws.send(JSON.stringify({
+      type: "test",
+      message: "WebSocket is working"
+    }));
+  });
 
- app.ws("/:clientid/projects/:projectid/websocketapi", function (ws, req, next) {
+
+  app.ws("/:clientid/projects/:projectid/websocketapi", function (ws, req, next) {
 
     // req.session.myuser = {};
     // req.session.myuser._id = 'RX28A8I1MA3SRLS4'
@@ -64,8 +64,8 @@ export default (app) => {
     // req.session.myuser.companyid ='661d45d677fdcfa48c8e8ed1'
 
     // console.log("myuser", req.session.myuser)
-   const { clientid, projectid } = req.params;
-  
+    const { clientid, projectid } = req.params;
+
 
     try {
       const user = new ChatUser(
@@ -80,7 +80,7 @@ export default (app) => {
       ws.on("message", function (jsonData) {
         try {
 
-           console.log("message", jsonData)
+          console.log("message", jsonData)
 
           // compare saved company to data
 
@@ -98,7 +98,7 @@ export default (app) => {
 
 
       ws.on("close", function () {
-         console.log("close")
+        console.log("close")
         try {
           user.handleClose();
         } catch (err) {
@@ -369,6 +369,34 @@ export default (app) => {
       });
     }
   });
+
+  app.post("/gfk/:engineer_id/saveprofile", checkSessionGFK, async (req, res) => {
+
+    try {
+      const gfk = new GFK();
+      const { engineer_id } = req.params;
+      const { profile } = req.body
+
+   
+      
+      const engineer = await gfk.saveEngineerProfile(engineer_id, profile)
+
+      if (!engineer) {
+        return res.status(404).send({
+          Error: 'Engineer not found'
+        });
+      }
+
+      res.status(200).send(engineer);
+
+    } catch (err) {
+      res.status(500).send({
+        Error: `Could not save engineer profile: ${err}`
+      });
+    }
+
+
+  })
 
   app.post("/gfk/saveprojects", checkSessionGFK, async (req, res) => {
     try {

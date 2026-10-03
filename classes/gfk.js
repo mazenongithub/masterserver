@@ -352,7 +352,9 @@ const ScheduleSchema = new mongoose.Schema({
             approvedby: {
                 type: String
             },
-
+            updatedby: {
+                type: String
+            },
             comments: String,
 
             proposalnumber: String
@@ -397,6 +399,41 @@ const Schedules = mongoose.model("schedules", ScheduleSchema)
 
 
 class GFK {
+
+    async saveEngineerProfile(engineer_id, profile) {
+        try {
+
+            const engineer = await MyEngineer.findByIdAndUpdate(
+                engineer_id,
+                {
+                    firstname: profile.firstname,
+                    lastname: profile.lastname,
+                    emailaddress: profile.emailaddress,
+                    profileurl: profile.profileurl,
+                    phonenumber: profile.phonenumber
+                },
+                {
+                    new: true,
+                    runValidators: true
+                }
+            );
+
+            if (!engineer) {
+                return {
+                    Error: 'Engineer not found'
+                };
+            }
+
+            return engineer;
+
+        } catch (err) {
+
+            return {
+                Error: `Could not save engineer profile: ${err}`
+            };
+
+        }
+    }
 
     async deleteProject(projectid) {
 
@@ -1666,6 +1703,27 @@ class GFK {
         }
     }
 
+    async saveProfile(engineer_id) {
+
+    }
+
+    async loadMyEngineers() {
+        try {
+            const engineers = await MyEngineer.find({});
+
+            return engineers.map(engineer => ({
+                engineer_id: engineer._id,
+                firstname: engineer.firstname,
+                lastname: engineer.lastname,
+                emailaddress: engineer.emailaddress,
+                phonenumber: engineer.phonenumber
+            }));
+
+        } catch (err) {
+            console.error(`Error loading all engineers: ${err}`);
+            throw err;
+        }
+    }
 
     async findEngineerByID(engineerId) {
         try {

@@ -161,6 +161,7 @@ export default (app) => {
     app.post(`/geotech/clientlogin`, async (req, res) => {
         try {
             const { loginCode, client_id } = req.body;
+            const gfk = new GFK();
 
             if (!loginCode || !client_id) {
                 return res.status(400).json({
@@ -183,9 +184,10 @@ export default (app) => {
 
             const deleteCode = await geotech.deleteLoginCode(client_id)
 
-            const [client, projects] = await Promise.all([
+            const [client, projects, engineers] = await Promise.all([
                 geotech.findClientByID(client_id),
-                geotech.findProjectsByClientID(client_id)
+                geotech.findProjectsByClientID(client_id),
+                gfk.loadMyEngineers()
             ]);
 
             if (!client) {
@@ -200,7 +202,8 @@ export default (app) => {
 
             return res.json({
                 client,
-                projects
+                projects,
+                engineers
             });
 
         } catch (error) {
@@ -391,6 +394,7 @@ export default (app) => {
 
     app.get("/geotech/checkuser", checkClient, async (req, res) => {
         const geotech = new Geotech();
+        const gfk = new GFK();
 
         try {
 
@@ -402,13 +406,15 @@ export default (app) => {
                 return res.status(404).json({ message: "Client not found" });
             }
 
+          
 
-
-            // 3️⃣ Fetch client's projects
-            const projects = await geotech.findProjectsByClientID(clientID);
+            const [ projects, engineers] = await Promise.all([
+                geotech.findProjectsByClientID(clientID),
+                gfk.loadMyEngineers()
+            ]);
 
             // 4️⃣ Return client and projects
-            return res.status(200).json({ client, projects });
+            return res.status(200).json({ client, projects, engineers });
 
         } catch (err) {
             console.error("Check user error:", err);
@@ -459,6 +465,8 @@ export default (app) => {
                 const projects = await geotech.findProjectsByClientID(
                     client._id.toString()
                 );
+
+
 
                 // Return client and projects
                 return res.status(200).json({
@@ -712,7 +720,7 @@ export default (app) => {
         }
     });
 
-    app.get('/geotech/deleteproject/:projectid', checkProjectCanDelete, async (req, res) => {
+    app.get('/geotech/:client_id/deleteproject/:projectid', checkProjectClient, checkProjectCanDelete, async (req, res) => {
         try {
             const gfk = new GFK();
             const { projectid } = req.params;
@@ -889,12 +897,12 @@ export default (app) => {
         }
     });
 
-    app.post('/geotech/:projectid/approveproposal/:proposalid', async (req, res) => {
+    app.post('/geotech/:client_id/project/:projectid/approveproposal/:proposalid', checkProjectClient, async (req, res) => {
 
         try {
 
-            const { projectid, proposalid } = req.params;
-            const clientid = req.session.clientID
+            const { projectid, proposalid, client_id } = req.params;
+
             const proposalUpdate = req.body;
 
             const schedule = await Schedules.findOne({ projectid });
@@ -929,7 +937,7 @@ export default (app) => {
 
             const notification = new Notifications();
 
-            await notification.proposalEmail(clientid, projectid, proposalid)
+            await notification.proposalEmail(client_id, projectid, proposalid)
 
             res.json({
                 error: false,
