@@ -106,6 +106,13 @@ class ChatUser {
                     updatedProposal: msg.updatedProposal
                 })
                 return;
+            case "updatedschedule-gfk":
+                this.room.broadcast({
+                    type: msg.type,
+                    message: msg.message,
+                    updatedSchedule: msg.updatedSchedule
+                })
+                return;
 
             case "default":
                 return;
