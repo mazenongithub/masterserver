@@ -114,6 +114,14 @@ class ChatUser {
                 })
                 return;
 
+            case "updatedtimesheet-gfk":
+                this.room.broadcast({
+                    type: msg.type,
+                    message: msg.message,
+                    updatedtimesheet: msg.updatedtimesheet
+                })
+                return;
+
             case "default":
                 return;
         }

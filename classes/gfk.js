@@ -355,6 +355,7 @@ const ScheduleSchema = new mongoose.Schema({
             updatedby: {
                 type: String
             },
+
             comments: String,
 
             proposalnumber: String
