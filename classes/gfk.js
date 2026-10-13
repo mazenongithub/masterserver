@@ -204,6 +204,7 @@ const EngineerSchema = new mongoose.Schema({
     engineerid: String,
     google: String,
     apple: String,
+    uid: String,
     firstname: String,
     lastname: String,
     emailaddress: String,
@@ -465,105 +466,128 @@ class GFK {
 
     }
 
-    async getExistingClient(uid) {
+    async getExistingEngineer(uid) {
         try {
+            const engineer = await MyEngineer.findOne({ uid });
 
-            const result = await GFKCompany.findOne(
-                { "clients.uid": uid },
-                { "clients.$": 1 }
-            );
-
-            if (!result || !result.clients || result.clients.length === 0) {
-                return null;
+            if (!engineer) {
+                return {
+                    success: false,
+                    message: "Engineer not found"
+                };
             }
 
-            return result.clients[0];
+            return {
+                success: true,
+                engineer
+            };
 
         } catch (error) {
-
-            console.error("Error retrieving existing client:", error);
+            console.error("Engineer login error:", error);
             throw error;
         }
     }
 
+
+    async getExistingClient(uid) {
+    try {
+
+        const result = await GFKCompany.findOne(
+            { "clients.uid": uid },
+            { "clients.$": 1 }
+        );
+
+        if (!result || !result.clients || result.clients.length === 0) {
+            return null;
+        }
+
+        return result.clients[0];
+
+    } catch (error) {
+
+        console.error("Error retrieving existing client:", error);
+        throw error;
+    }
+}
+
     async findClientByClientID(clientid) {
-        try {
-            const gfkCompany = await GFKCompany.findOne({
-                company: 'gfk',
-                'clients.clientid': clientid
-            });
-
-            if (!gfkCompany) {
-                return null;
-            }
-
-            const client = gfkCompany.clients.find(
-                client => client.clientid === clientid
-            );
-
-            return client || null;
-
-        } catch (err) {
-            throw new Error(
-                `Could not find client by clientid: ${err.message}`
-            );
-        }
-    }
-
-    async findClientByEmail(emailaddress) {
-        try {
-            const gfkCompany = await GFKCompany.findOne({
-                company: 'gfk',
-                'clients.emailaddress': emailaddress
-            });
-
-            if (gfkCompany) {
-                return true;
-            }
-
-            return false;
-
-        } catch (err) {
-            throw new Error(`Could not find client by email: ${err.message}`);
-        }
-    }
-
-    async sendContactEmail(values) {
-        let {
-            emailaddress,
-            fullname,
-            company,
-            phonenumber,
-            lab,
-            liquefaction,
-            logdraft,
-            field,
-            ptslab,
-            description,
-            slope,
-            reports,
-            invoice,
-            created
-        } = values;
-
-        created = new Date(created).toLocaleTimeString('en-US', {
-            timeZone: 'America/Los_Angeles'
+    try {
+        const gfkCompany = await GFKCompany.findOne({
+            company: 'gfk',
+            'clients.clientid': clientid
         });
 
-        const labModules = lab
-            ? `
+        if (!gfkCompany) {
+            return null;
+        }
+
+        const client = gfkCompany.clients.find(
+            client => client.clientid === clientid
+        );
+
+        return client || null;
+
+    } catch (err) {
+        throw new Error(
+            `Could not find client by clientid: ${err.message}`
+        );
+    }
+}
+
+    async findClientByEmail(emailaddress) {
+    try {
+        const gfkCompany = await GFKCompany.findOne({
+            company: 'gfk',
+            'clients.emailaddress': emailaddress
+        });
+
+        if (gfkCompany) {
+            return true;
+        }
+
+        return false;
+
+    } catch (err) {
+        throw new Error(`Could not find client by email: ${err.message}`);
+    }
+}
+
+    async sendContactEmail(values) {
+    let {
+        emailaddress,
+        fullname,
+        company,
+        phonenumber,
+        lab,
+        liquefaction,
+        logdraft,
+        field,
+        ptslab,
+        description,
+        slope,
+        reports,
+        invoice,
+        created
+    } = values;
+
+    created = new Date(created).toLocaleTimeString('en-US', {
+        timeZone: 'America/Los_Angeles'
+    });
+
+    const labModules = lab
+        ? `
       <li>Liquefaction Analysis: ${liquefaction ? 'Yes' : 'No'}</li>
       <li>PT Slab Design & Reporting: ${ptslab ? 'Yes' : 'No'}</li>
       <li>Geotechnical Log Drafting: ${logdraft ? 'Yes' : 'No'}</li>
     `
-            : `<li>Soil Lab Add-on Modules: N/A</li>`;
+        : `<li>Soil Lab Add-on Modules: N/A</li>`;
 
-        await transporter.sendMail({
-            from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
-            to: 'mazen@civilengineer.io',
-            replyTo: emailaddress,
-            subject: 'New Service Request Submission',
-            html: `
+    await transporter.sendMail({
+        from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
+        to: 'mazen@civilengineer.io',
+        replyTo: emailaddress,
+        subject: 'New Service Request Submission',
+        html: `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #333;">
         <h2>New Service Request</h2>
 
@@ -594,30 +618,30 @@ class GFK {
         </p>
       </div>
     `
-        });
-    }
+    });
+}
 
 
     async sendClientEmail(values) {
 
-        let { emailaddress, fullname, company, phonenumber, lab, liquefaction, logdraft, field, ptslab, description, slope, reports, invoice, created } = values
-        created = new Date(created).toLocaleTimeString('en-US', {
-            timeZone: 'America/Los_Angeles'
-        });
+    let { emailaddress, fullname, company, phonenumber, lab, liquefaction, logdraft, field, ptslab, description, slope, reports, invoice, created } = values
+    created = new Date(created).toLocaleTimeString('en-US', {
+        timeZone: 'America/Los_Angeles'
+    });
 
-        const labModules = lab
-            ? `
+    const labModules = lab
+        ? `
       <li>Liquefaction Analysis: ${liquefaction ? 'Yes' : 'No'}</li>
       <li>PT Slab Design & Reporting: ${ptslab ? 'Yes' : 'No'}</li>
       <li>Geotechnical Log Drafting: ${logdraft ? 'Yes' : 'No'}</li>
     `
-            : `<li>Soil Lab Add-on Modules: N/A</li>`;
+        : `<li>Soil Lab Add-on Modules: N/A</li>`;
 
-        await transporter.sendMail({
-            from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
-            to: emailaddress,
-            subject: 'We received your service request',
-            html: `
+    await transporter.sendMail({
+        from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
+        to: emailaddress,
+        subject: 'We received your service request',
+        html: `
         <div style="font-family: Arial, Helvetica, sans-serif; color: #333;">
           <h2>Thank you for contacting CivilEngineer.io</h2>
     
@@ -661,261 +685,261 @@ class GFK {
     
         </div>
       `
-        });
+    });
 
-    }
+}
 
     async insertContact(contact) {
 
-        try {
+    try {
 
-            const contactus = await GFKContactUs.insertOne(contact);
-            return contactus;
-
-
-        } catch (err) {
-
-            console.error('Error inserting contact form:', err);
-            return { message: `Error: Could not insert contact form - ${err.message}` };
-        }
+        const contactus = await GFKContactUs.insertOne(contact);
+        return contactus;
 
 
+    } catch (err) {
+
+        console.error('Error inserting contact form:', err);
+        return { message: `Error: Could not insert contact form - ${err.message}` };
     }
+
+
+}
 
     async saveProjects(myProjects) {
-        try {
-            const filter = { companyid: myProjects.companyid };
+    try {
+        const filter = { companyid: myProjects.companyid };
 
-            const options = {
-                new: true,       // ✅ return the updated document
-                upsert: true,    // ✅ create new if not found
-                strict: false,   // ✅ allow flexible schema fields
-            };
+        const options = {
+            new: true,       // ✅ return the updated document
+            upsert: true,    // ✅ create new if not found
+            strict: false,   // ✅ allow flexible schema fields
+        };
 
-            const updatedProjects = await MyProjects.findOneAndUpdate(filter, myProjects, options);
+        const updatedProjects = await MyProjects.findOneAndUpdate(filter, myProjects, options);
 
-            return updatedProjects;
+        return updatedProjects;
 
-        } catch (err) {
-            console.error('Error saving project:', err);
-            return { message: `Error: Could not save project - ${err.message}` };
-        }
+    } catch (err) {
+        console.error('Error saving project:', err);
+        return { message: `Error: Could not save project - ${err.message}` };
     }
+}
 
     async loadBorings(projectid) {
-        try {
-            const filter = { projectid };
+    try {
+        const filter = { projectid };
 
-            const updatedBorings = await MyBorings.findOne(filter);
+        const updatedBorings = await MyBorings.findOne(filter);
 
-            // ✅ Return empty array if no document found
-            if (!updatedBorings || !Array.isArray(updatedBorings.borings)) {
-                return [];
-            }
-
-            // Sort borings by boringnumber
-            updatedBorings.borings.sort((a, b) => {
-                const numA = Number(a.boringnumber) || 0;
-                const numB = Number(b.boringnumber) || 0;
-                return numA - numB;
-            });
-
-            // Sort samples by depth inside each boring
-            updatedBorings.borings.forEach(boring => {
-                if (Array.isArray(boring.samples)) {
-                    boring.samples.sort((a, b) => {
-                        const depthA = Number(a.depth) || 0;
-                        const depthB = Number(b.depth) || 0;
-                        return depthA - depthB;
-                    });
-                }
-            });
-
-            return updatedBorings.borings;
-
-        } catch (err) {
-            console.error('Error loading borings:', err);
+        // ✅ Return empty array if no document found
+        if (!updatedBorings || !Array.isArray(updatedBorings.borings)) {
             return [];
         }
+
+        // Sort borings by boringnumber
+        updatedBorings.borings.sort((a, b) => {
+            const numA = Number(a.boringnumber) || 0;
+            const numB = Number(b.boringnumber) || 0;
+            return numA - numB;
+        });
+
+        // Sort samples by depth inside each boring
+        updatedBorings.borings.forEach(boring => {
+            if (Array.isArray(boring.samples)) {
+                boring.samples.sort((a, b) => {
+                    const depthA = Number(a.depth) || 0;
+                    const depthB = Number(b.depth) || 0;
+                    return depthA - depthB;
+                });
+            }
+        });
+
+        return updatedBorings.borings;
+
+    } catch (err) {
+        console.error('Error loading borings:', err);
+        return [];
     }
+}
 
 
 
     async saveBorings(myBorings) {
-        try {
-            const filter = { projectid: myBorings.projectid };
+    try {
+        const filter = { projectid: myBorings.projectid };
 
-            const options = {
-                new: true,       // ✅ return the updated document
-                upsert: true,    // ✅ create new if not found
-                strict: false,   // ✅ allow flexible schema fields
-            };
+        const options = {
+            new: true,       // ✅ return the updated document
+            upsert: true,    // ✅ create new if not found
+            strict: false,   // ✅ allow flexible schema fields
+        };
 
-            const updatedBorings = await MyBorings.findOneAndUpdate(filter, myBorings, options);
+        const updatedBorings = await MyBorings.findOneAndUpdate(filter, myBorings, options);
 
-            return updatedBorings;
+        return updatedBorings;
 
-        } catch (err) {
-            console.error('Error saving borings:', err);
-            return { message: `Error: Could not save borings - ${err.message}` };
-        }
+    } catch (err) {
+        console.error('Error saving borings:', err);
+        return { message: `Error: Could not save borings - ${err.message}` };
     }
+}
 
     async findFieldReportByID(projectid, fieldid) {
-        try {
-            const report = await FieldReports.findOne(
-                {
-                    projectid: projectid,
-                    "fieldreports.fieldid": fieldid
-                },
-                {
-                    "fieldreports.$": 1
-                }
-            );
+    try {
+        const report = await FieldReports.findOne(
+            {
+                projectid: projectid,
+                "fieldreports.fieldid": fieldid
+            },
+            {
+                "fieldreports.$": 1
+            }
+        );
 
-            return report ?? { Error: "Field report not found." };
+        return report ?? { Error: "Field report not found." };
 
-        } catch (err) {
-            return { Error: `Could not find field report: ${err.message || err}` };
-        }
+    } catch (err) {
+        return { Error: `Could not find field report: ${err.message || err}` };
     }
+}
 
     async getClientByEmail(emailaddress) {
 
-        const result = await GFKCompany.findOne(
-            { "clients.emailaddress": emailaddress },
-            { "clients.$": 1 }
-        ).lean();
+    const result = await GFKCompany.findOne(
+        { "clients.emailaddress": emailaddress },
+        { "clients.$": 1 }
+    ).lean();
 
-        return result?.clients?.[0] || null;
-    }
+    return result?.clients?.[0] || null;
+}
 
     async createNewUserByEmail(emailaddress) {
 
-        const client = {
-            emailaddress: emailaddress.trim().toLowerCase()
-        };
+    const client = {
+        emailaddress: emailaddress.trim().toLowerCase()
+    };
 
-        const result = await GFKCompany.findOneAndUpdate(
-            {},
-            { $push: { clients: client } },
-            {
-                new: true,
-                projection: { clients: { $slice: -1 } }
-            }
-        ).lean();
+    const result = await GFKCompany.findOneAndUpdate(
+        {},
+        { $push: { clients: client } },
+        {
+            new: true,
+            projection: { clients: { $slice: -1 } }
+        }
+    ).lean();
 
-        return result?.clients?.[0] || null;
-    }
+    return result?.clients?.[0] || null;
+}
 
 
     async loadFieldReports(projectid) {
-        try {
-            if (!projectid) {
-                throw new Error("Missing project ID.");
-            }
+    try {
+        if (!projectid) {
+            throw new Error("Missing project ID.");
+        }
 
-            const filter = { projectid };
-            const fieldReportDoc = await FieldReports.findOne(filter);
+        const filter = { projectid };
+        const fieldReportDoc = await FieldReports.findOne(filter);
 
-            // Return empty array if no document found
-            if (!fieldReportDoc || !Array.isArray(fieldReportDoc.fieldreports)) {
-                console.warn(`⚠️ No field reports found for project ${projectid}`);
-                return [];
-            }
-
-            // Sort field reports by datereport (ascending)
-            const sortedReports = fieldReportDoc.fieldreports.sort((a, b) => {
-                const dateA = new Date(a.datereport);
-                const dateB = new Date(b.datereport);
-                return dateA - dateB;
-            });
-
-            return sortedReports;
-
-        } catch (err) {
-            console.error("❌ Error loading field reports:", err);
+        // Return empty array if no document found
+        if (!fieldReportDoc || !Array.isArray(fieldReportDoc.fieldreports)) {
+            console.warn(`⚠️ No field reports found for project ${projectid}`);
             return [];
         }
+
+        // Sort field reports by datereport (ascending)
+        const sortedReports = fieldReportDoc.fieldreports.sort((a, b) => {
+            const dateA = new Date(a.datereport);
+            const dateB = new Date(b.datereport);
+            return dateA - dateB;
+        });
+
+        return sortedReports;
+
+    } catch (err) {
+        console.error("❌ Error loading field reports:", err);
+        return [];
     }
+}
 
     async saveClients(myClients) {
-        try {
-            const filter = { company: myClients.company };
+    try {
+        const filter = { company: myClients.company };
 
-            const options = {
-                new: true,       // return updated document
-                upsert: true,    // create if not found
-            };
+        const options = {
+            new: true,       // return updated document
+            upsert: true,    // create if not found
+        };
 
-            // Use $set to avoid replacing the entire document accidentally
-            const update = {
-                $set: { clients: myClients.clients }
-            };
+        // Use $set to avoid replacing the entire document accidentally
+        const update = {
+            $set: { clients: myClients.clients }
+        };
 
-            const updated = await GFKCompany.findOneAndUpdate(filter, update, options);
+        const updated = await GFKCompany.findOneAndUpdate(filter, update, options);
 
-            return updated.clients;
+        return updated.clients;
 
-        } catch (err) {
-            console.error('Error saving clients:', err);
-            return { message: `Error: Could not save clients - ${err.message}` };
-        }
+    } catch (err) {
+        console.error('Error saving clients:', err);
+        return { message: `Error: Could not save clients - ${err.message}` };
     }
+}
 
 
 
     async findClients() {
-        try {
-            // Find a single company document
-            const companyDoc = await GFKCompany.findOne({ company: 'gfk' });
+    try {
+        // Find a single company document
+        const companyDoc = await GFKCompany.findOne({ company: 'gfk' });
 
-            // If no document found or no clients array, return empty array
-            if (!companyDoc || !Array.isArray(companyDoc.clients)) {
-                return [];
-            }
-
-            return companyDoc.clients;
-
-        } catch (err) {
-            console.error('Error: Could not find clients', err);
-            return {
-                message: `Error: Could not find clients - ${err.message}`
-            };
+        // If no document found or no clients array, return empty array
+        if (!companyDoc || !Array.isArray(companyDoc.clients)) {
+            return [];
         }
+
+        return companyDoc.clients;
+
+    } catch (err) {
+        console.error('Error: Could not find clients', err);
+        return {
+            message: `Error: Could not find clients - ${err.message}`
+        };
     }
+}
 
     async addClient(newClient) {
-        try {
+    try {
 
-            const gfkCompany = await GFKCompany.findOne({
-                company: 'gfk'
-            });
+        const gfkCompany = await GFKCompany.findOne({
+            company: 'gfk'
+        });
 
-            if (!gfkCompany) {
-                return null;
-            }
-
-            // Make sure clients is an array
-            if (!Array.isArray(gfkCompany.clients)) {
-                gfkCompany.clients = [];
-            }
-
-            // Add client to embedded clients array
-            gfkCompany.clients.push(newClient);
-
-            // Save document
-            await gfkCompany.save();
-
-            // Return newly created embedded client
-            return gfkCompany.clients[gfkCompany.clients.length - 1];
-
-        } catch (error) {
-
-            console.error("Error adding client:", error);
-            throw error;
+        if (!gfkCompany) {
+            return null;
         }
+
+        // Make sure clients is an array
+        if (!Array.isArray(gfkCompany.clients)) {
+            gfkCompany.clients = [];
+        }
+
+        // Add client to embedded clients array
+        gfkCompany.clients.push(newClient);
+
+        // Save document
+        await gfkCompany.save();
+
+        // Return newly created embedded client
+        return gfkCompany.clients[gfkCompany.clients.length - 1];
+
+    } catch (error) {
+
+        console.error("Error adding client:", error);
+        throw error;
     }
+}
 
 
 
@@ -924,816 +948,807 @@ class GFK {
 
 
     async saveFieldReports(fieldReports) {
-        try {
-            const filter = { projectid: fieldReports.projectid };
+    try {
+        const filter = { projectid: fieldReports.projectid };
 
-            const options = {
-                new: true,       // ✅ return the updated document
-                upsert: true,    // ✅ create new if not found
-                strict: false,   // ✅ allow flexible schema fields
-            };
+        const options = {
+            new: true,       // ✅ return the updated document
+            upsert: true,    // ✅ create new if not found
+            strict: false,   // ✅ allow flexible schema fields
+        };
 
-            const updatedReports = await FieldReports.findOneAndUpdate(filter, fieldReports, options);
+        const updatedReports = await FieldReports.findOneAndUpdate(filter, fieldReports, options);
 
-            return updatedReports;
+        return updatedReports;
 
-        } catch (err) {
-            console.error('Error saving fieldreports:', err);
-            return { message: `Error: Could not save fieldreports - ${err.message}` };
-        }
+    } catch (err) {
+        console.error('Error saving fieldreports:', err);
+        return { message: `Error: Could not save fieldreports - ${err.message}` };
     }
+}
 
 
     async saveCompactionCurves(myCompactionCurves) {
-        try {
-            const filter = { projectid: myCompactionCurves.projectid };
+    try {
+        const filter = { projectid: myCompactionCurves.projectid };
 
-            // Always ensure compactioncurves is an array
-            const curvesArray = Array.isArray(myCompactionCurves.compactioncurves)
-                ? myCompactionCurves.compactioncurves
-                : [];
+        // Always ensure compactioncurves is an array
+        const curvesArray = Array.isArray(myCompactionCurves.compactioncurves)
+            ? myCompactionCurves.compactioncurves
+            : [];
 
-            const update = {
-                $set: { compactioncurves: curvesArray }
-            };
+        const update = {
+            $set: { compactioncurves: curvesArray }
+        };
 
-            const options = {
-                new: true,     // return updated doc
-                upsert: true,  // create if not exists
-            };
+        const options = {
+            new: true,     // return updated doc
+            upsert: true,  // create if not exists
+        };
 
-            const updatedDoc = await CompactionCurves.findOneAndUpdate(
-                filter,
-                update,
-                options
-            );
+        const updatedDoc = await CompactionCurves.findOneAndUpdate(
+            filter,
+            update,
+            options
+        );
 
-            // Return ONLY the curves array for the frontend
-            return updatedDoc.compactioncurves || [];
+        // Return ONLY the curves array for the frontend
+        return updatedDoc.compactioncurves || [];
 
-        } catch (err) {
-            console.error('Error saving compaction curves:', err);
-            return { message: `Error: Could not save compaction curves - ${err.message}` };
-        }
+    } catch (err) {
+        console.error('Error saving compaction curves:', err);
+        return { message: `Error: Could not save compaction curves - ${err.message}` };
     }
+}
 
 
     async loadCompactionCurves(projectid) {
-        try {
-            if (!projectid) {
-                throw new Error("Missing project ID.");
-            }
+    try {
+        if (!projectid) {
+            throw new Error("Missing project ID.");
+        }
 
-            const filter = { projectid };
-            const compactionDoc = await CompactionCurves.findOne(filter);
+        const filter = { projectid };
+        const compactionDoc = await CompactionCurves.findOne(filter);
 
-            if (!compactionDoc || !Array.isArray(compactionDoc.compactioncurves)) {
-                console.warn(`⚠️ No compaction curves found for project ${projectid}`);
-                return [];
-            }
-
-            // ✅ Sort compaction curves by curvenumber (ascending)
-            const sortedCurves = compactionDoc.compactioncurves.sort((a, b) => {
-                const numA = Number(a.curvenumber) || 0;
-                const numB = Number(b.curvenumber) || 0;
-                return numA - numB;
-            });
-
-            return sortedCurves;
-
-        } catch (err) {
-            console.error("❌ Error loading compaction curves:", err);
+        if (!compactionDoc || !Array.isArray(compactionDoc.compactioncurves)) {
+            console.warn(`⚠️ No compaction curves found for project ${projectid}`);
             return [];
         }
+
+        // ✅ Sort compaction curves by curvenumber (ascending)
+        const sortedCurves = compactionDoc.compactioncurves.sort((a, b) => {
+            const numA = Number(a.curvenumber) || 0;
+            const numB = Number(b.curvenumber) || 0;
+            return numA - numB;
+        });
+
+        return sortedCurves;
+
+    } catch (err) {
+        console.error("❌ Error loading compaction curves:", err);
+        return [];
     }
+}
 
 
 
     async saveSeismic(seismic) {
-        try {
-            const filter = { projectid: seismic.projectid };
+    try {
+        const filter = { projectid: seismic.projectid };
 
-            const options = {
-                new: true,       // ✅ return the updated document
-                upsert: true,    // ✅ create new if not found
-                strict: false,   // ✅ allow flexible schema fields
-            };
+        const options = {
+            new: true,       // ✅ return the updated document
+            upsert: true,    // ✅ create new if not found
+            strict: false,   // ✅ allow flexible schema fields
+        };
 
-            const updatedSeismic = await SeismicReport.findOneAndUpdate(filter, seismic, options);
+        const updatedSeismic = await SeismicReport.findOneAndUpdate(filter, seismic, options);
 
-            return updatedSeismic;
+        return updatedSeismic;
 
-        } catch (err) {
-            console.error('Error saving sesimic report:', err);
-            return { message: `Error: Could not save seismic report - ${err.message}` };
-        }
+    } catch (err) {
+        console.error('Error saving sesimic report:', err);
+        return { message: `Error: Could not save seismic report - ${err.message}` };
     }
+}
 
     async loadSeismic(projectid) {
-        try {
-            if (!projectid) {
-                throw new Error("Missing project ID.");
-            }
+    try {
+        if (!projectid) {
+            throw new Error("Missing project ID.");
+        }
 
-            const filter = { projectid };
-            const seismicDoc = await SeismicReport.findOne(filter);
+        const filter = { projectid };
+        const seismicDoc = await SeismicReport.findOne(filter);
 
-            if (!seismicDoc) {
-                console.warn(`⚠️ No seismic data found for project ${projectid}`);
-                return {
-                    vseismic: null,
-                    hseismic: null,
-                    points: []
-                };
-            }
-
-            // ✅ Safely sort seismic points by depth (ascending)
-            const sortedPoints = Array.isArray(seismicDoc.points)
-                ? seismicDoc.points.sort((a, b) => {
-                    const depthA = Number(a.depth) || 0;
-                    const depthB = Number(b.depth) || 0;
-                    return depthA - depthB;
-                })
-                : [];
-
-            // ✅ Return clean, structured data
+        if (!seismicDoc) {
+            console.warn(`⚠️ No seismic data found for project ${projectid}`);
             return {
-                siteacceleration: seismicDoc.siteacceleration || null,
-                magnitude: seismicDoc.magnitude || null,
-                points: sortedPoints
-            };
-
-        } catch (err) {
-            console.error("❌ Error loading seismic data:", err);
-            return {
-                siteacceleration: null,
-                magnitude: null,
+                vseismic: null,
+                hseismic: null,
                 points: []
             };
         }
+
+        // ✅ Safely sort seismic points by depth (ascending)
+        const sortedPoints = Array.isArray(seismicDoc.points)
+            ? seismicDoc.points.sort((a, b) => {
+                const depthA = Number(a.depth) || 0;
+                const depthB = Number(b.depth) || 0;
+                return depthA - depthB;
+            })
+            : [];
+
+        // ✅ Return clean, structured data
+        return {
+            siteacceleration: seismicDoc.siteacceleration || null,
+            magnitude: seismicDoc.magnitude || null,
+            points: sortedPoints
+        };
+
+    } catch (err) {
+        console.error("❌ Error loading seismic data:", err);
+        return {
+            siteacceleration: null,
+            magnitude: null,
+            points: []
+        };
     }
+}
 
 
 
     async savePTSlab(ptslab) {
-        try {
-            const filter = { projectid: ptslab.projectid };
+    try {
+        const filter = { projectid: ptslab.projectid };
 
-            const options = {
-                new: true,       // ✅ return the updated document
-                upsert: true,    // ✅ create new if not found
-                strict: false,   // ✅ allow flexible schema fields
-            };
+        const options = {
+            new: true,       // ✅ return the updated document
+            upsert: true,    // ✅ create new if not found
+            strict: false,   // ✅ allow flexible schema fields
+        };
 
-            const updatedPTSlab = await PTSlabs.findOneAndUpdate(filter, ptslab, options);
+        const updatedPTSlab = await PTSlabs.findOneAndUpdate(filter, ptslab, options);
 
-            return updatedPTSlab;
+        return updatedPTSlab;
 
-        } catch (err) {
-            console.error('Error saving ptslab report:', err);
-            return { message: `Error: Could not save ptslab report - ${err.message}` };
-        }
+    } catch (err) {
+        console.error('Error saving ptslab report:', err);
+        return { message: `Error: Could not save ptslab report - ${err.message}` };
     }
+}
 
     async loadPTSlab(projectid) {
-        try {
-            if (!projectid) {
-                throw new Error("Missing project ID.");
-            }
+    try {
+        if (!projectid) {
+            throw new Error("Missing project ID.");
+        }
 
-            const filter = { projectid };
-            const slabDoc = await PTSlabs.findOne(filter);
+        const filter = { projectid };
+        const slabDoc = await PTSlabs.findOne(filter);
 
-            if (!slabDoc) {
-                console.warn(`⚠️ No PT slab data found for project ${projectid}`);
-                return { projectid, sections: [] };
-            }
-
-            // ✅ Sort each section’s layers by numeric toplayer
-            const sortedSections = (slabDoc.sections || []).map(section => {
-                const sortedLayers = Array.isArray(section.layers)
-                    ? [...section.layers].sort((a, b) => {
-                        const topA = Number(a.toplayer) || 0;
-                        const topB = Number(b.toplayer) || 0;
-                        return topA - topB;
-                    })
-                    : [];
-
-                return {
-                    sectionid: section.sectionid || null,
-                    sectionname: section.sectionname || null,
-                    layers: sortedLayers
-                };
-            });
-
-            // ✅ Return clean structured response
-            return {
-                projectid: slabDoc.projectid,
-                sections: sortedSections
-            };
-
-        } catch (err) {
-            console.error("❌ Error loading PT slab:", err);
+        if (!slabDoc) {
+            console.warn(`⚠️ No PT slab data found for project ${projectid}`);
             return { projectid, sections: [] };
         }
+
+        // ✅ Sort each section’s layers by numeric toplayer
+        const sortedSections = (slabDoc.sections || []).map(section => {
+            const sortedLayers = Array.isArray(section.layers)
+                ? [...section.layers].sort((a, b) => {
+                    const topA = Number(a.toplayer) || 0;
+                    const topB = Number(b.toplayer) || 0;
+                    return topA - topB;
+                })
+                : [];
+
+            return {
+                sectionid: section.sectionid || null,
+                sectionname: section.sectionname || null,
+                layers: sortedLayers
+            };
+        });
+
+        // ✅ Return clean structured response
+        return {
+            projectid: slabDoc.projectid,
+            sections: sortedSections
+        };
+
+    } catch (err) {
+        console.error("❌ Error loading PT slab:", err);
+        return { projectid, sections: [] };
     }
+}
 
 
 
 
     async saveSlope(slope) {
-        try {
-            const filter = { projectid: slope.projectid };
+    try {
+        const filter = { projectid: slope.projectid };
 
-            const options = {
-                new: true,       // ✅ return the updated document
-                upsert: true,    // ✅ create new if not found
-                strict: false,   // ✅ allow flexible schema fields
-            };
+        const options = {
+            new: true,       // ✅ return the updated document
+            upsert: true,    // ✅ create new if not found
+            strict: false,   // ✅ allow flexible schema fields
+        };
 
-            const updatedSlope = await Slopes.findOneAndUpdate(filter, slope, options);
+        const updatedSlope = await Slopes.findOneAndUpdate(filter, slope, options);
 
-            return updatedSlope;
+        return updatedSlope;
 
-        } catch (err) {
-            console.error('Error saving slope report:', err);
-            return { message: `Error: Could not save slope report - ${err.message}` };
-        }
+    } catch (err) {
+        console.error('Error saving slope report:', err);
+        return { message: `Error: Could not save slope report - ${err.message}` };
     }
+}
 
     async saveTimesheet(myTimesheet) {
-        try {
-            if (!myTimesheet?.projectid) {
-                throw new Error("Project ID is required to save a timesheet.");
-            }
-
-            const filter = { projectid: myTimesheet.projectid };
-            const options = {
-                new: true,    // return the updated document
-                upsert: true, // create if not found
-            };
-
-            const update = {
-                $set: {
-                    labor: Array.isArray(myTimesheet.labor) ? myTimesheet.labor : [],
-                    costs: Array.isArray(myTimesheet.costs) ? myTimesheet.costs : [],
-                    invoices: Array.isArray(myTimesheet.invoices) ? myTimesheet.invoices : []
-                }
-            };
-
-            const updatedTimesheet = await TimeSheets.findOneAndUpdate(filter, update, options);
-
-            // Return only labor, costs, invoices
-            return {
-                labor: updatedTimesheet?.labor || [],
-                costs: updatedTimesheet?.costs || [],
-                invoices: updatedTimesheet?.invoices || []
-            };
-
-        } catch (err) {
-            console.error('Error saving timesheet:', err);
-            return {
-                message: `Error: Could not save timesheet - ${err.message}`
-            };
+    try {
+        if (!myTimesheet?.projectid) {
+            throw new Error("Project ID is required to save a timesheet.");
         }
+
+        const filter = { projectid: myTimesheet.projectid };
+        const options = {
+            new: true,    // return the updated document
+            upsert: true, // create if not found
+        };
+
+        const update = {
+            $set: {
+                labor: Array.isArray(myTimesheet.labor) ? myTimesheet.labor : [],
+                costs: Array.isArray(myTimesheet.costs) ? myTimesheet.costs : [],
+                invoices: Array.isArray(myTimesheet.invoices) ? myTimesheet.invoices : []
+            }
+        };
+
+        const updatedTimesheet = await TimeSheets.findOneAndUpdate(filter, update, options);
+
+        // Return only labor, costs, invoices
+        return {
+            labor: updatedTimesheet?.labor || [],
+            costs: updatedTimesheet?.costs || [],
+            invoices: updatedTimesheet?.invoices || []
+        };
+
+    } catch (err) {
+        console.error('Error saving timesheet:', err);
+        return {
+            message: `Error: Could not save timesheet - ${err.message}`
+        };
     }
+}
 
 
 
     async loadTimesheet(projectid) {
-        try {
-            if (!projectid) {
-                throw new Error("Project ID is required to load a timesheet.");
-            }
+    try {
+        if (!projectid) {
+            throw new Error("Project ID is required to load a timesheet.");
+        }
 
-            // Find the timesheet but exclude projectid and _id from the result
-            const timesheetDoc = await TimeSheets.findOne(
-                { projectid },
-                { projectid: 0, _id: 0 }  // ⬅️ exclude unwanted fields
-            );
+        // Find the timesheet but exclude projectid and _id from the result
+        const timesheetDoc = await TimeSheets.findOne(
+            { projectid },
+            { projectid: 0, _id: 0 }  // ⬅️ exclude unwanted fields
+        );
 
-            // Return only the allowed structure
-            if (!timesheetDoc) {
-                return {
-                    labor: [],
-                    costs: [],
-                    invoices: []
-                };
-            }
-
-            return {
-                labor: timesheetDoc.labor || [],
-                costs: timesheetDoc.costs || [],
-                invoices: timesheetDoc.invoices || []
-            };
-
-        } catch (err) {
-            console.error("Error loading timesheet:", err);
-
+        // Return only the allowed structure
+        if (!timesheetDoc) {
             return {
                 labor: [],
                 costs: [],
-                invoices: [],
-                error: true,
-                message: `Could not load timesheet: ${err.message}`
+                invoices: []
             };
         }
+
+        return {
+            labor: timesheetDoc.labor || [],
+            costs: timesheetDoc.costs || [],
+            invoices: timesheetDoc.invoices || []
+        };
+
+    } catch (err) {
+        console.error("Error loading timesheet:", err);
+
+        return {
+            labor: [],
+            costs: [],
+            invoices: [],
+            error: true,
+            message: `Could not load timesheet: ${err.message}`
+        };
     }
+}
 
     async getInvoice(projectid, invoiceid) {
-        try {
+    try {
 
-            const timesheet = await TimeSheets.findOne(
-                { projectid },
-                {
-                    invoices: 1,
-                    labor: 1,
-                    costs: 1
-                }
-            ).lean();
-
-            if (!timesheet) {
-                throw new Error("Timesheet not found");
+        const timesheet = await TimeSheets.findOne(
+            { projectid },
+            {
+                invoices: 1,
+                labor: 1,
+                costs: 1
             }
+        ).lean();
 
-            const invoice = timesheet.invoices.find(
-                i => i.invoiceid === invoiceid
-            );
-
-            if (!invoice) {
-                throw new Error("Invoice not found");
-            }
-
-            // Labor
-            const labor = timesheet.labor
-                .filter(l => invoice.labor.includes(l.laborid))
-                .map(l => {
-
-                    const totalHours =
-                        (new Date(l.timeout) - new Date(l.timein)) /
-                        (1000 * 60 * 60);
-
-                    return {
-                        type: "labor",
-                        date: l.timein,
-                        amount: totalHours * l.laborrate,
-                        totalhours: totalHours,
-                        ...l
-                    };
-
-                });
-
-            // Costs
-            const costs = timesheet.costs
-                .filter(c => invoice.costs.includes(c.costid))
-                .map(c => ({
-                    type: "cost",
-                    date: c.datein,
-                    amount: c.quantity * c.unitcost,
-                    ...c
-                }));
-
-            // Chronological list
-            const items = [...labor, ...costs].sort(
-                (a, b) => new Date(a.date) - new Date(b.date)
-            );
-
-            // Totals
-            const laborTotal = labor.reduce(
-                (sum, item) => sum + item.amount,
-                0
-            );
-
-            const costTotal = costs.reduce(
-                (sum, item) => sum + item.amount,
-                0
-            );
-
-            const invoiceTotal = laborTotal + costTotal;
-
-            return {
-                invoiceid: invoice.invoiceid,
-                dateinvoice: invoice.dateinvoice,
-                status: invoice.status,
-                paymentstatus: invoice.paymentstatus,
-                transactionid: invoice.transactionid,
-                datepaid: invoice.datepaid,
-                items,
-                laborTotal,
-                costTotal,
-                invoiceTotal
-            };
-
-        } catch (err) {
-
-            console.error("Error retrieving invoice:", err);
-
-            return {
-                message: `Error: Could not retrieve invoice - ${err.message}`
-            };
+        if (!timesheet) {
+            throw new Error("Timesheet not found");
         }
+
+        const invoice = timesheet.invoices.find(
+            i => i.invoiceid === invoiceid
+        );
+
+        if (!invoice) {
+            throw new Error("Invoice not found");
+        }
+
+        // Labor
+        const labor = timesheet.labor
+            .filter(l => invoice.labor.includes(l.laborid))
+            .map(l => {
+
+                const totalHours =
+                    (new Date(l.timeout) - new Date(l.timein)) /
+                    (1000 * 60 * 60);
+
+                return {
+                    type: "labor",
+                    date: l.timein,
+                    amount: totalHours * l.laborrate,
+                    totalhours: totalHours,
+                    ...l
+                };
+
+            });
+
+        // Costs
+        const costs = timesheet.costs
+            .filter(c => invoice.costs.includes(c.costid))
+            .map(c => ({
+                type: "cost",
+                date: c.datein,
+                amount: c.quantity * c.unitcost,
+                ...c
+            }));
+
+        // Chronological list
+        const items = [...labor, ...costs].sort(
+            (a, b) => new Date(a.date) - new Date(b.date)
+        );
+
+        // Totals
+        const laborTotal = labor.reduce(
+            (sum, item) => sum + item.amount,
+            0
+        );
+
+        const costTotal = costs.reduce(
+            (sum, item) => sum + item.amount,
+            0
+        );
+
+        const invoiceTotal = laborTotal + costTotal;
+
+        return {
+            invoiceid: invoice.invoiceid,
+            dateinvoice: invoice.dateinvoice,
+            status: invoice.status,
+            paymentstatus: invoice.paymentstatus,
+            transactionid: invoice.transactionid,
+            datepaid: invoice.datepaid,
+            items,
+            laborTotal,
+            costTotal,
+            invoiceTotal
+        };
+
+    } catch (err) {
+
+        console.error("Error retrieving invoice:", err);
+
+        return {
+            message: `Error: Could not retrieve invoice - ${err.message}`
+        };
     }
+}
 
     async getProposal(projectid, proposalid) {
-        try {
+    try {
 
-            const schedule = await Schedules.findOne(
-                { projectid },
-                {
-                    proposals: 1,
-                    labor: 1,
-                    costs: 1
-                }
-            ).lean();
-
-            if (!schedule) {
-                throw new Error("Schedule not found");
+        const schedule = await Schedules.findOne(
+            { projectid },
+            {
+                proposals: 1,
+                labor: 1,
+                costs: 1
             }
+        ).lean();
 
-            const proposal = schedule.proposals.find(
-                p => p.proposalid === proposalid
-            );
-
-            if (!proposal) {
-                throw new Error("Proposal not found");
-            }
-
-            // Proposal labor
-            const labor = schedule.labor
-                .filter(l => proposal.labor.includes(l.laborid))
-                .map(l => {
-
-                    const hours =
-                        (new Date(l.timeout) - new Date(l.timein)) /
-                        (1000 * 60 * 60);
-
-                    return {
-                        type: "labor",
-                        date: l.timein,
-                        amount: hours * l.laborrate,
-                        ...l
-                    };
-
-                });
-
-            // Proposal costs
-            const costs = schedule.costs
-                .filter(c => proposal.costs.includes(c.costid))
-                .map(c => ({
-                    type: "cost",
-                    date: c.datein,
-                    amount: c.unitcost * c.quantity,
-                    ...c
-                }));
-
-            // Combined timeline
-            const items = [...labor, ...costs].sort(
-                (a, b) => new Date(a.date) - new Date(b.date)
-            );
-
-            const totalAmount = items.reduce(
-                (total, item) => total + item.amount,
-                0
-            );
-
-            return {
-                proposalid: proposal.proposalid,
-                proposalnumber: proposal.proposalnumber,
-                version: proposal.version,
-                status: proposal.status,
-                dateproposal: proposal.dateproposal,
-                expirationdate: proposal.expirationdate,
-                dateapproved: proposal.dateapproved,
-                approvedby: proposal.approvedby,
-                comments: proposal.comments,
-                items,
-                totalAmount
-            };
-
-        } catch (err) {
-            console.error("Error retrieving proposal:", err);
-
-            return {
-                message: `Error: Could not retrieve proposal - ${err.message}`
-            };
+        if (!schedule) {
+            throw new Error("Schedule not found");
         }
+
+        const proposal = schedule.proposals.find(
+            p => p.proposalid === proposalid
+        );
+
+        if (!proposal) {
+            throw new Error("Proposal not found");
+        }
+
+        // Proposal labor
+        const labor = schedule.labor
+            .filter(l => proposal.labor.includes(l.laborid))
+            .map(l => {
+
+                const hours =
+                    (new Date(l.timeout) - new Date(l.timein)) /
+                    (1000 * 60 * 60);
+
+                return {
+                    type: "labor",
+                    date: l.timein,
+                    amount: hours * l.laborrate,
+                    ...l
+                };
+
+            });
+
+        // Proposal costs
+        const costs = schedule.costs
+            .filter(c => proposal.costs.includes(c.costid))
+            .map(c => ({
+                type: "cost",
+                date: c.datein,
+                amount: c.unitcost * c.quantity,
+                ...c
+            }));
+
+        // Combined timeline
+        const items = [...labor, ...costs].sort(
+            (a, b) => new Date(a.date) - new Date(b.date)
+        );
+
+        const totalAmount = items.reduce(
+            (total, item) => total + item.amount,
+            0
+        );
+
+        return {
+            proposalid: proposal.proposalid,
+            proposalnumber: proposal.proposalnumber,
+            version: proposal.version,
+            status: proposal.status,
+            dateproposal: proposal.dateproposal,
+            expirationdate: proposal.expirationdate,
+            dateapproved: proposal.dateapproved,
+            approvedby: proposal.approvedby,
+            comments: proposal.comments,
+            items,
+            totalAmount
+        };
+
+    } catch (err) {
+        console.error("Error retrieving proposal:", err);
+
+        return {
+            message: `Error: Could not retrieve proposal - ${err.message}`
+        };
     }
+}
 
 
 
     async loadSchedule(projectid) {
-        try {
-            if (!projectid) {
-                throw new Error("Project ID is required to load a schedule.");
-            }
-
-            const scheduleDoc = await Schedules.findOne(
-                { projectid },
-                { projectid: 0, _id: 0 }
-            ).lean();
-
-            return {
-                error: false,
-                labor: scheduleDoc?.labor || [],
-                costs: scheduleDoc?.costs || [],
-                proposals: scheduleDoc?.proposals || []
-            };
-
-        } catch (err) {
-            console.error("Error loading schedule:", err);
-
-            return {
-                error: true,
-                message: `Could not load schedule: ${err.message}`,
-                labor: [],
-                costs: [],
-                proposals: []
-            };
+    try {
+        if (!projectid) {
+            throw new Error("Project ID is required to load a schedule.");
         }
+
+        const scheduleDoc = await Schedules.findOne(
+            { projectid },
+            { projectid: 0, _id: 0 }
+        ).lean();
+
+        return {
+            error: false,
+            labor: scheduleDoc?.labor || [],
+            costs: scheduleDoc?.costs || [],
+            proposals: scheduleDoc?.proposals || []
+        };
+
+    } catch (err) {
+        console.error("Error loading schedule:", err);
+
+        return {
+            error: true,
+            message: `Could not load schedule: ${err.message}`,
+            labor: [],
+            costs: [],
+            proposals: []
+        };
     }
+}
 
 
     async saveSchedule(mySchedule) {
-        try {
-            if (!mySchedule?.projectid) {
-                throw new Error("Project ID is required to save a timesheet.");
-            }
-
-            const filter = { projectid: mySchedule.projectid };
-            const options = {
-                new: true,    // return the updated document
-                upsert: true, // create if not found
-            };
-
-            const update = {
-                $set: {
-                    labor: Array.isArray(mySchedule.labor) ? mySchedule.labor : [],
-                    costs: Array.isArray(mySchedule.costs) ? mySchedule.costs : [],
-                    proposals: Array.isArray(mySchedule.proposals) ? mySchedule.proposals : []
-                }
-            };
-
-            const updatedSchedule = await Schedules.findOneAndUpdate(filter, update, options);
-
-            // Return only labor, costs, proposals
-            return {
-                labor: updatedSchedule?.labor || [],
-                costs: updatedSchedule?.costs || [],
-                proposals: updatedSchedule?.proposals || []
-            };
-
-        } catch (err) {
-            console.error('Error saving timesheet:', err);
-            return {
-                message: `Error: Could not save timesheet - ${err.message}`
-            };
+    try {
+        if (!mySchedule?.projectid) {
+            throw new Error("Project ID is required to save a timesheet.");
         }
+
+        const filter = { projectid: mySchedule.projectid };
+        const options = {
+            new: true,    // return the updated document
+            upsert: true, // create if not found
+        };
+
+        const update = {
+            $set: {
+                labor: Array.isArray(mySchedule.labor) ? mySchedule.labor : [],
+                costs: Array.isArray(mySchedule.costs) ? mySchedule.costs : [],
+                proposals: Array.isArray(mySchedule.proposals) ? mySchedule.proposals : []
+            }
+        };
+
+        const updatedSchedule = await Schedules.findOneAndUpdate(filter, update, options);
+
+        // Return only labor, costs, proposals
+        return {
+            labor: updatedSchedule?.labor || [],
+            costs: updatedSchedule?.costs || [],
+            proposals: updatedSchedule?.proposals || []
+        };
+
+    } catch (err) {
+        console.error('Error saving timesheet:', err);
+        return {
+            message: `Error: Could not save timesheet - ${err.message}`
+        };
     }
+}
 
 
 
 
     async loadSlope(projectid) {
-        try {
-            if (!projectid) {
-                throw new Error("Missing project ID.");
-            }
+    try {
+        if (!projectid) {
+            throw new Error("Missing project ID.");
+        }
 
-            const filter = { projectid };
-            const slopeDoc = await Slopes.findOne(filter);
+        const filter = { projectid };
+        const slopeDoc = await Slopes.findOne(filter);
 
-            if (!slopeDoc) {
-                console.warn(`⚠️ No slope data found for project ${projectid}`);
-                return { projectid, sections: [] };
-            }
+        if (!slopeDoc) {
+            console.warn(`⚠️ No slope data found for project ${projectid}`);
+            return { projectid, sections: [] };
+        }
 
-            // ✅ Sort each layer’s points by numeric xcoord
-            const sortedSections = (slopeDoc.sections || []).map(section => {
-                const sortedLayers = (section.layers || []).map(layer => {
-                    const sortedPoints = Array.isArray(layer.points)
-                        ? [...layer.points].sort((a, b) => {
-                            const xA = Number(a.xcoord) || 0;
-                            const xB = Number(b.xcoord) || 0;
-                            return xA - xB;
-                        })
-                        : [];
-
-                    return {
-                        layerid: layer.layerid || null,
-                        layer: layer.layer || null,
-                        layertype: layer.layertype || null,
-                        linetype: layer.linetype || null,
-                        color: layer.color || null,
-                        layerorder: layer.layerorder || null,
-                        points: sortedPoints,
-                        strength: layer.strength || {},
-                        failure: layer.failure || {}
-                    };
-                });
+        // ✅ Sort each layer’s points by numeric xcoord
+        const sortedSections = (slopeDoc.sections || []).map(section => {
+            const sortedLayers = (section.layers || []).map(layer => {
+                const sortedPoints = Array.isArray(layer.points)
+                    ? [...layer.points].sort((a, b) => {
+                        const xA = Number(a.xcoord) || 0;
+                        const xB = Number(b.xcoord) || 0;
+                        return xA - xB;
+                    })
+                    : [];
 
                 return {
-                    sectionid: section.sectionid || null,
-                    sectionname: section.sectionname || null,
-                    slices: section.slices || null,
-                    layers: sortedLayers
+                    layerid: layer.layerid || null,
+                    layer: layer.layer || null,
+                    layertype: layer.layertype || null,
+                    linetype: layer.linetype || null,
+                    color: layer.color || null,
+                    layerorder: layer.layerorder || null,
+                    points: sortedPoints,
+                    strength: layer.strength || {},
+                    failure: layer.failure || {}
                 };
             });
 
-            // ✅ Return cleaned + sorted data
             return {
-                projectid: slopeDoc.projectid,
-                vseismic: slopeDoc.vseismic || null,
-                hseismic: slopeDoc.hseismic || null,
-                sections: sortedSections
+                sectionid: section.sectionid || null,
+                sectionname: section.sectionname || null,
+                slices: section.slices || null,
+                layers: sortedLayers
             };
+        });
 
-        } catch (err) {
-            console.error("❌ Error loading slope stability:", err);
-            return { projectid, sections: [] };
-        }
+        // ✅ Return cleaned + sorted data
+        return {
+            projectid: slopeDoc.projectid,
+            vseismic: slopeDoc.vseismic || null,
+            hseismic: slopeDoc.hseismic || null,
+            sections: sortedSections
+        };
+
+    } catch (err) {
+        console.error("❌ Error loading slope stability:", err);
+        return { projectid, sections: [] };
     }
+}
 
 
     async getProjectById(projectid) {
-        try {
-            const doc = await MyProjects.findOne(
-                { "projects.projectid": projectid },
-                { "projects.$": 1 }
-            );
+    try {
+        const doc = await MyProjects.findOne(
+            { "projects.projectid": projectid },
+            { "projects.$": 1 }
+        );
 
-            return doc?.projects?.[0] || null;
+        return doc?.projects?.[0] || null;
 
-        } catch (err) {
-            console.error("Error fetching project:", err);
-            throw err; // or return null;
-        }
+    } catch (err) {
+        console.error("Error fetching project:", err);
+        throw err; // or return null;
     }
+}
 
 
 
 
     async loadProjects(companyid) {
 
-        try {
+    try {
 
-            let projects = await MyProjects.findOne({ companyid })
-            return projects.projects;
+        let projects = await MyProjects.findOne({ companyid })
+        return projects.projects;
 
-        } catch (err) {
+    } catch (err) {
 
-            console.error('Error loading projects:', err);
-            return { message: `Error: Could not load projects - ${err.message}` };
+        console.error('Error loading projects:', err);
+        return { message: `Error: Could not load projects - ${err.message}` };
 
+    }
+}
+
+
+async clientLogin(myEngineer) {
+    try {
+        // Firebase UID is required
+        if (!myEngineer?.uid) {
+            return { message: 'Firebase uid string missing' };
         }
-    }
 
+        
 
-    async clientLogin(myEngineer) {
-        try {
-            // Must have at least one provider
-            if (!myEngineer.apple && !myEngineer.google) {
-                return { message: 'Missing Apple or Google ID' };
-            }
+        // Find existing engineer by Firebase UID
+        const getEngineer = await this.getExistingEngineer(myEngineer.uid);
 
-            // Determine provider
-            const provider = myEngineer.apple ? 'apple' : 'google';
-            const providerId = myEngineer[provider];
-
-            // Look for existing engineer
-            let existingEngineer = null;
-            if (provider === 'apple') {
-                existingEngineer = await this.getAppleUser(providerId);
-            } else {
-                existingEngineer = await this.getGoogleUser(providerId);
-            }
-
-            if (existingEngineer) {
-                // ✅ Wrap in object with "engineer" property
-                return { engineer: existingEngineer };
-            }
-
-            // Ensure engineer ID exists before registration
-            if (!myEngineer.engineerid) {
-                return { message: 'Cannot register engineer — engineer ID missing' };
-            }
-
-            // Register new engineer
-            const newEngineer = await this.registerNewUser(myEngineer);
-
-            // ✅ Wrap in object with "engineer" property
-            return { engineer: newEngineer };
-
-        } catch (err) {
-            console.error('Client login error:', err);
-            return { message: `Error during client login: ${err.message}` };
+        if (getEngineer.success) {
+            return {
+                status: 'served',
+                engineer: getEngineer.engineer
+            };
         }
+
+        return {
+            status: 'not_found',
+            message: 'Engineer not found'
+        };
+
+    } catch (err) {
+        console.error('Client login error:', err);
+
+        return {
+            message: `Error during client login: ${err.message}`
+        };
     }
+}
 
 
 
+hashPassword(password) {
 
-    hashPassword(password) {
-
-        return bcrypt.hashSync(password, 10);
-    }
+    return bcrypt.hashSync(password, 10);
+}
 
     async getAppleUser(appleId) {
-        try {
-            const allEngineers = await MyEngineer.find({ apple: { $exists: true } });
+    try {
+        const allEngineers = await MyEngineer.find({ apple: { $exists: true } });
 
-            for (const engineer of allEngineers) {
-                const isMatch = bcrypt.compareSync(appleId, engineer.apple);
-                if (isMatch) {
-                    return engineer; // Found
-                }
+        for (const engineer of allEngineers) {
+            const isMatch = bcrypt.compareSync(appleId, engineer.apple);
+            if (isMatch) {
+                return engineer; // Found
             }
-
-            // Return null if no match found (important!)
-            return null;
-
-        } catch (err) {
-            console.error('Error finding Apple engineer:', err);
-            throw err; // Let clientLogin handle it
         }
+
+        // Return null if no match found (important!)
+        return null;
+
+    } catch (err) {
+        console.error('Error finding Apple engineer:', err);
+        throw err; // Let clientLogin handle it
     }
+}
 
 
     async getGoogleUser(googleId) {
-        try {
-            const allEngineers = await MyEngineer.find({ google: { $exists: true } });
+    try {
+        const allEngineers = await MyEngineer.find({ google: { $exists: true } });
 
-            for (const engineer of allEngineers) {
-                const isMatch = bcrypt.compareSync(googleId, engineer.google);
-                if (isMatch) {
-                    return engineer; // Found
-                }
+        for (const engineer of allEngineers) {
+            const isMatch = bcrypt.compareSync(googleId, engineer.google);
+            if (isMatch) {
+                return engineer; // Found
             }
-
-            // Return null if no match found (important!)
-            return null;
-
-        } catch (err) {
-            console.error('Error finding Google engineer:', err);
-            throw err; // Let clientLogin handle it
         }
+
+        // Return null if no match found (important!)
+        return null;
+
+    } catch (err) {
+        console.error('Error finding Google engineer:', err);
+        throw err; // Let clientLogin handle it
     }
+}
 
 
     async registerNewUser(newEngineer) {
-        try {
-            // ✅ Hash Apple ID if it exists
-            if (newEngineer.apple) {
-                const salt = await bcrypt.genSalt(10);
-                newEngineer.apple = await bcrypt.hash(newEngineer.apple, salt);
-            }
-
-            // ✅ Hash Google ID if it exists
-            if (newEngineer.google) {
-                const salt = await bcrypt.genSalt(10);
-                newEngineer.google = await bcrypt.hash(newEngineer.google, salt);
-            }
-
-            // ✅ Create engineer in DB
-            const createdEngineer = await MyEngineer.create(newEngineer);
-
-            return createdEngineer;
-
-        } catch (err) {
-            console.error('Error registering new engineer:', err);
-            return { message: `Error: Could not register engineer - ${err.message}` };
+    try {
+        // ✅ Hash Apple ID if it exists
+        if (newEngineer.apple) {
+            const salt = await bcrypt.genSalt(10);
+            newEngineer.apple = await bcrypt.hash(newEngineer.apple, salt);
         }
+
+        // ✅ Hash Google ID if it exists
+        if (newEngineer.google) {
+            const salt = await bcrypt.genSalt(10);
+            newEngineer.google = await bcrypt.hash(newEngineer.google, salt);
+        }
+
+        // ✅ Create engineer in DB
+        const createdEngineer = await MyEngineer.create(newEngineer);
+
+        return createdEngineer;
+
+    } catch (err) {
+        console.error('Error registering new engineer:', err);
+        return { message: `Error: Could not register engineer - ${err.message}` };
     }
+}
 
     async saveProfile(engineer_id) {
 
-    }
+}
 
     async loadMyEngineers() {
-        try {
-            const engineers = await MyEngineer.find({});
+    try {
+        const engineers = await MyEngineer.find({});
 
-            return engineers.map(engineer => ({
-                engineer_id: engineer._id,
-                firstname: engineer.firstname,
-                lastname: engineer.lastname,
-                emailaddress: engineer.emailaddress,
-                phonenumber: engineer.phonenumber
-            }));
+        return engineers.map(engineer => ({
+            engineer_id: engineer._id,
+            firstname: engineer.firstname,
+            lastname: engineer.lastname,
+            emailaddress: engineer.emailaddress,
+            phonenumber: engineer.phonenumber
+        }));
 
-        } catch (err) {
-            console.error(`Error loading all engineers: ${err}`);
-            throw err;
-        }
+    } catch (err) {
+        console.error(`Error loading all engineers: ${err}`);
+        throw err;
     }
+}
 
     async findEngineerByID(engineerId) {
-        try {
-            const engineer = await MyEngineer.findById(engineerId);
-            return engineer || { message: "Engineer not found" };
-        } catch (err) {
-            return { message: `Error finding engineer: ${err.message}` };
-        }
+    try {
+        const engineer = await MyEngineer.findById(engineerId);
+        return engineer || { message: "Engineer not found" };
+    } catch (err) {
+        return { message: `Error finding engineer: ${err.message}` };
     }
+}
 
 
 
