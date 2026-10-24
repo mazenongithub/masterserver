@@ -4,7 +4,7 @@ import mysql from 'mysql2/promise'
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { checkSessionGFK } from '../middleware/checkgfk.js'
+import { checkSessionGFK } from '../middleware/gfk-ms.js'
 import { create } from 'xmlbuilder2';
 import { streamFOP } from '../xsl/fopHelper.js';
 import { calcdryden, calcmoist, calculateCost, calculateLaborCost, escapeXml, formatDate, formatDateTime } from '../functions/gfkfunctions.js';
@@ -46,15 +46,6 @@ export default (app) => {
   // Routes
   const uploadFieldImage = multer({ storage: createStorage('uploads/gfk/fieldimages') });
   const uploadLogDraft = multer({ storage: createStorage('uploads/gfk/logdraft') });
-
-  app.ws("/test-ws", (ws, req) => {
-    console.log("🔥 TEST WEBSOCKET CONNECTED");
-
-    ws.send(JSON.stringify({
-      type: "test",
-      message: "WebSocket is working"
-    }));
-  });
 
 
   app.ws("/:clientid/projects/:projectid/websocketapi", function (ws, req, next) {
@@ -378,8 +369,8 @@ export default (app) => {
       const { engineer_id } = req.params;
       const { profile } = req.body
 
-   
-      
+
+
       const engineer = await gfk.saveEngineerProfile(engineer_id, profile)
 
       if (!engineer) {
@@ -398,6 +389,27 @@ export default (app) => {
 
 
   })
+
+  app.post('/gfk/savereport', checkSessionGFK, async (req, res) => {
+    const report = req.body;
+    const gfk = new GFK();
+
+    try {
+      const savedreport = await gfk.saveReport(report);
+
+      return res.status(200).send({
+        savedreport,
+        timestamp: new Date()
+      });
+
+    } catch (err) {
+      console.error('Error saving report:', err);
+
+      return res.status(500).send({
+        error: `Server error: unable to save report. ${err.message}`
+      });
+    }
+  });
 
   app.post("/gfk/saveprojects", checkSessionGFK, async (req, res) => {
     try {
@@ -791,7 +803,7 @@ export default (app) => {
       }
 
       // Load borings and field reports in parallel
-      const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = [], timesheet = [], schedule = []] = await Promise.all([
+      const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = [], timesheet = [], schedule = [], reports = []] = await Promise.all([
         gfk.loadBorings(projectid).catch(() => []),
         gfk.loadFieldReports(projectid).catch(() => []),
         gfk.loadCompactionCurves(projectid).catch(() => []),
@@ -799,7 +811,8 @@ export default (app) => {
         gfk.loadPTSlab(projectid).catch(() => []),
         gfk.loadSlope(projectid).catch(() => []),
         gfk.loadTimesheet(projectid).catch(() => []),
-        gfk.loadSchedule(projectid).catch(() => [])
+        gfk.loadSchedule(projectid).catch(() => []),
+        gfk.loadReports(projectid).catch(() => [])
 
       ]);
 
@@ -817,6 +830,7 @@ export default (app) => {
         slope,
         timesheet,
         schedule,
+        reports,
         hasData: borings.length > 0 || fieldreports.length > 0,
         message:
           borings.length === 0 && fieldreports.length === 0
@@ -833,70 +847,70 @@ export default (app) => {
     }
   });
 
- app.post('/:gfk/users/clientlogin', async (req, res) => {
+  app.post('/:gfk/users/clientlogin', async (req, res) => {
     try {
-        const gfk = new GFK();
-        const geotech = new Geotech();
+      const gfk = new GFK();
+      const geotech = new Geotech();
 
-        const engineerInfo = req.body;
+      const engineerInfo = req.body;
 
-        // Verify Firebase authentication token
-        if (!engineerInfo.authToken) {
-            return res.status(401).json({
-                message: 'Firebase authentication token missing'
-            });
-        }
-
-        const getUser = await geotech.getFireBaseUser(
-            engineerInfo.authToken
-        );
-
-        console.log("856", getUser)
-
-        if (!getUser?.uid) {
-            return res.status(401).json({
-                message: 'Invalid Firebase authentication'
-            });
-        }
-
-        // Assign verified Firebase UID
-        engineerInfo.uid = getUser.uid;
-
-        // Find existing engineer
-        const result = await gfk.clientLogin(engineerInfo);
-
-        if (!result.engineer) {
-            return res.status(404).json({
-                message: result.message || 'Engineer not found'
-            });
-        }
-
-        // Save session for authenticated engineer
-        req.session.engineerId = result.engineer._id;
-        await req.session.save();
-
-        // Load application data
-        const [clients, projects] = await Promise.all([
-            gfk.findClients(),
-            gfk.loadProjects('gfk')
-        ]);
-
-        return res.status(200).json({
-            engineer: result.engineer,
-            projects,
-            gfk: {
-                clients
-            }
+      // Verify Firebase authentication token
+      if (!engineerInfo.authToken) {
+        return res.status(401).json({
+          message: 'Firebase authentication token missing'
         });
+      }
+
+      const getUser = await geotech.getFireBaseUser(
+        engineerInfo.authToken
+      );
+
+
+
+      if (!getUser?.uid) {
+        return res.status(401).json({
+          message: 'Invalid Firebase authentication'
+        });
+      }
+
+      // Assign verified Firebase UID
+      engineerInfo.uid = getUser.uid;
+
+      // Find existing engineer
+      const result = await gfk.clientLogin(engineerInfo);
+
+      if (!result.engineer) {
+        return res.status(404).json({
+          message: result.message || 'Engineer not found'
+        });
+      }
+
+      // Save session for authenticated engineer
+      req.session.engineerId = result.engineer._id;
+      await req.session.save();
+
+      // Load application data
+      const [clients, projects] = await Promise.all([
+        gfk.findClients(),
+        gfk.loadProjects('gfk')
+      ]);
+
+      return res.status(200).json({
+        engineer: result.engineer,
+        projects,
+        gfk: {
+          clients
+        }
+      });
 
     } catch (err) {
-        console.error('Error during engineer login:', err);
+      console.error('Error during engineer login:', err);
 
-        return res.status(500).json({
-            message: 'Could not log in engineer'
-        });
+      return res.status(500).json({
+        message: 'Could not log in engineer'
+      });
     }
-});
+  });
 
   app.get("/gfk/:engineerid/logout", (req, res) => {
     const { engineerid } = req.params;
