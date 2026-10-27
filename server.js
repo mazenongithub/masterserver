@@ -20,6 +20,7 @@ import Stripe from "stripe";
 import Notifications from './classes/notifications.js';
 import Room from './classes/room.js';
 
+
 // await testConnection()
 (async () => {
   try {
@@ -69,8 +70,7 @@ const port = process.env.PORT || 3000;
 
 
 
-const allowedOrigins = [
-  'http://localhost:61622',
+const allowedOrigins = [,
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3003',
@@ -138,7 +138,7 @@ app.post("/stripe/webhook",
         process.env.STRIPE_WEBHOOK_SECRET
       );
 
-  
+
 
       switch (event.type) {
 
@@ -164,7 +164,7 @@ app.post("/stripe/webhook",
               {
                 type: "invoicepayment-submitted",
                 message: "invoicepayment-submitted",
-                updatedInvoice:updatedInvoice.invoice,
+                updatedInvoice: updatedInvoice.invoice,
                 paymentcost: updatedInvoice.paymentCost
               }
             );
@@ -219,6 +219,9 @@ expressWs(app, server);
 app.get("/", (req, res) => {
   res.send(`Server running in ${process.env.NODE_ENV} mode`)
 })
+
+
+
 
 appbaseddriver(app);
 gfk(app);

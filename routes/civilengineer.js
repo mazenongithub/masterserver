@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import CivilEngineer from '../classes/civilengineer.js'
 import { rateLimiter } from '../middleware/ratelimit.js';
+import OpenAI from 'openai';
+
 const contactSchema = new mongoose.Schema({
     company: String,
     construction: { type: Boolean, default: false },
@@ -130,6 +132,60 @@ export default (app) => {
             });
         }
     });
+
+
+    app.post('/civilengineer/askopenai', async (req, res) => {
+        try {
+            if (!process.env.OPEN_AI_SECRET) {
+                return res.status(500).json({
+                    success: false,
+                    error: 'OpenAI API key is not configured.'
+                });
+            }
+    
+            const openai = new OpenAI({
+                apiKey: process.env.OPEN_AI_SECRET
+            });
+    
+            const {question} = req.body;
+    
+            const response = await openai.responses.create({
+                model: 'gpt-6-luna',
+                input: question,
+                max_output_tokens: 500
+            });
+    
+            return res.status(200).json({
+                success: true,
+                answer: response.output_text
+            });
+    
+        } catch (error) {
+            console.error('OpenAI API error:', error.message);
+    
+            const status = error.status || 500;
+    
+            if (status === 401) {
+                return res.status(401).json({
+                    success: false,
+                    error: 'OpenAI API authentication failed. Check your API key.'
+                });
+            }
+    
+            if (status === 429) {
+                return res.status(429).json({
+                    success: false,
+                    error: 'OpenAI API quota or rate limit exceeded. Check your billing and usage.'
+                });
+            }
+    
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to get a response from OpenAI.'
+            });
+        }
+    });
+    
 
 
 }
