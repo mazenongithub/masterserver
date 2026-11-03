@@ -91,6 +91,10 @@ const BoringSchema = new mongoose.Schema({
             pi: String,
             remarks: String,
             sptlength: String,
+            linebreak: {
+                type: Boolean,
+                default: false
+            },
             sieve: {
                 wgt34: String,
                 wgt38: String,
@@ -498,6 +502,34 @@ class GFK {
         }
     }
 
+    async getBoringById(projectid, boringid) {
+
+        try {
+            const boring = await MyBorings.findOne(
+                {
+                    projectid: projectid,
+                    borings: {
+                        $elemMatch: {
+                            projectid: projectid,
+                            boringid: boringid
+                        }
+                    }
+                },
+                {
+                    'borings.$': 1
+                }
+            );
+
+            return boring?.borings?.[0] || null;
+
+        } catch (error) {
+            console.error('Error getting boring:', error);
+            throw error;
+        }
+    }
+
+
+
     async getInvoiceTotal(projectid, invoiceid) {
 
     }
@@ -543,6 +575,30 @@ class GFK {
 
             console.error("Error retrieving existing client:", error);
             throw error;
+        }
+    }
+
+    async findClientByID(client_id) {
+        try {
+            const gfkCompany = await GFKCompany.findOne({
+                company: 'gfk',
+                'clients._id': client_id
+            });
+
+            if (!gfkCompany) {
+                return null;
+            }
+
+            const client = gfkCompany.clients.find(
+                client => client._id.toString() === client_id.toString()
+            );
+
+            return client || null;
+
+        } catch (err) {
+            throw new Error(
+                `Could not find client by client_id: ${err.message}`
+            );
         }
     }
 
@@ -1511,49 +1567,64 @@ class GFK {
             };
         }
     }
-    
 
 
-async saveReport(report) {
-    try {
-        if (!report?.reportid) {
-            throw new Error('Report ID is required.');
-        }
 
-        const savedReport = await GFKReports.findOneAndUpdate(
-            { reportid: report.reportid },
-            { $set: report },
-            {
-                new: true,
-                upsert: true,
-                runValidators: true
+    async saveReport(report) {
+        try {
+            if (!report?.reportid) {
+                throw new Error('Report ID is required.');
             }
-        );
 
-        return savedReport;
+            const savedReport = await GFKReports.findOneAndUpdate(
+                { reportid: report.reportid },
+                { $set: report },
+                {
+                    new: true,
+                    upsert: true,
+                    runValidators: true
+                }
+            );
 
-    } catch (err) {
-        console.error('Error saving report:', err);
+            return savedReport;
 
-        throw err instanceof Error
-            ? err
-            : new Error(String(err));
-    }
-}
- async loadReports(projectid) {
-    try {
-        const reports = await GFKReports.find({ projectid });
+        } catch (err) {
+            console.error('Error saving report:', err);
 
-        if (reports.length > 0) {
-            return reports;
+            throw err instanceof Error
+                ? err
+                : new Error(String(err));
         }
-
-        return [];
-
-    } catch (err) {
-        throw new Error(`Could not load reports: ${err.message}`);
     }
-}
+
+    async getReportByID(projectid, reportid) {
+        try {
+            const report = await GFKReports.findOne({
+                projectid,
+                reportid
+            });
+
+            return report || null;
+
+        } catch (err) {
+            throw new Error(`Could not load report: ${err.message}`);
+        }
+    }
+
+    async loadReports(projectid) {
+        try {
+            const reports = await GFKReports.find({ projectid });
+
+            if (reports.length > 0) {
+                return reports;
+            }
+
+            return [];
+
+        } catch (err) {
+            throw new Error(`Could not load reports: ${err.message}`);
+        }
+    }
 
 
     async saveSchedule(mySchedule) {

@@ -7,7 +7,7 @@ import fs from 'fs';
 import { checkSessionGFK } from '../middleware/gfk-ms.js'
 import { create } from 'xmlbuilder2';
 import { streamFOP } from '../xsl/fopHelper.js';
-import { calcdryden, calcmoist, calculateCost, calculateLaborCost, escapeXml, formatDate, formatDateTime } from '../functions/gfkfunctions.js';
+import { calcdryden, calcmoist, calculateCost, calculateLaborCost, escapeXml, formatDate, formatDateReport, formatDateTime } from '../functions/gfkfunctions.js';
 import UnconfinedCalcs from '../classes/unconfinedcalcs.js';
 import SoilClassification from '../classes/soilclassification.js';
 import ChatUser from '../classes/chatuser.js'
@@ -665,6 +665,8 @@ export default (app) => {
       const company = req.params.company?.trim();
       const clients = req.body?.clients;
 
+      console.log({ company, clients })
+
       if (!company) {
         return res.status(400).json({ message: "Company is required in URL." });
       }
@@ -974,9 +976,210 @@ export default (app) => {
     }
   });
 
+  app.get('/gfk/xml/:projectid/boring/:boringid', async (req, res) => {
+    const gfk = new GFK();
+    const { projectid, boringid } = req.params;
+
+    try {
+        const boring = await gfk.getBoringById(projectid, boringid);
+
+        if (!boring) {
+            return res.status(404).send({
+                Error: 'Boring not found'
+            });
+        }
+
+        // Build XML document
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<log>
+    <boring>
+        <boringid>${boring.boringid || ''}</boringid>
+        <projectid>${boring.projectid || projectid}</projectid>
+        <boringnumber>${boring.boringnumber || ''}</boringnumber>
+        <datedrilled>${boring.datedrilled || ''}</datedrilled>
+        <loggedby>${boring.loggedby || ''}</loggedby>
+        <drillrig>${boring.drillrig || ''}</drillrig>
+        <elevation>${boring.elevation || ''}</elevation>
+        <diameter>${boring.diameter || ''}</diameter>
+        <gwdepth>${boring.gwdepth || ''}</gwdepth>
+        <latitude>${boring.latitude || ''}</latitude>
+        <longitude>${boring.longitude || ''}</longitude>
+        <samples>
+            ${(boring.samples || []).map(sample => `
+            <sample>
+                <sampleid>${sample.sampleid || ''}</sampleid>
+                <sampleset>${sample.sampleset || ''}</sampleset>
+                <samplenumber>${sample.samplenumber || ''}</samplenumber>
+                <sampledepth>${sample.sampledepth || ''}</sampledepth>
+                <depth>${sample.depth || ''}</depth>
+                <diameter>${sample.diameter || ''}</diameter>
+                <samplelength>${sample.samplelength || ''}</samplelength>
+                <description>${sample.description || ''}</description>
+                <uscs>${sample.uscs || ''}</uscs>
+                <spt>${sample.spt || ''}</spt>
+                <sptlength>${sample.sptlength || ''}</sptlength>
+                <graphiclog>${sample.graphiclog || ''}</graphiclog>
+                <remarks>${sample.remarks || ''}</remarks>
+                <drydensity>${sample.drydensity || ''}</drydensity>
+                <moisturecontent>${sample.moisturecontent || ''}</moisturecontent>
+                <unconfinedstrength>${sample.unconfinedstrength || ''}</unconfinedstrength>
+                <sieveanalysis>${sample.sieveanalysis || ''}</sieveanalysis>
+            </sample>`).join('')}
+        </samples>
+    </boring>
+</log>`;
+
+        res.set('Content-Type', 'application/xml; charset=utf-8');
+        return res.status(200).send(xml);
+
+    } catch (err) {
+        console.error('GFK XML generation error:', err);
+
+        return res.status(500).send({
+            Error: `Server error ${err.message}`
+        });
+    }
+});
+
 
   // Assuming you have a MongoDB `db` instance ready
   // e.g., const db = client.db("yourDb");
+
+  app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
+    const gfk = new GFK();
+    
+ 
+
+
+
+    try {
+      const { projectid, reportid } = req.params;
+
+      // Get the report.
+      const report = await gfk.getReportByID(
+        projectid,
+        reportid
+      );
+
+      if (!report) {
+        return res.status(404).send({
+          Error: 'Report not found.'
+        });
+      }
+
+      const toUpperCase = (value) => {
+        return typeof value === 'string'
+          ? value.trim().toUpperCase()
+          : value;
+      }
+
+      // Escape special XML characters.
+      const escapeXML = (value) => {
+        return String(value ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&apos;');
+      };
+
+      // Retrieve Project
+
+      const project = await gfk.getProjectById.call(this, projectid)
+      if (!project) {
+        throw new Error(`Project not found: ${projectid}`);
+      }
+
+      const client_id = project.clientid;
+
+      const getclient = await gfk.findClientByID(client_id)
+
+
+
+      if (!getclient) {
+        throw new Error(`Client not found: ${client_id}`);
+      }
+
+      let client = `${getclient.prefix} ${getclient.firstname} ${getclient.lastname}`
+
+
+
+      // Build XML for a section and its nested subsections.
+      const buildSectionXML = (section) => {
+        let xml = `
+                <section>
+                    <title>${escapeXML(section.section)}</title>
+                    <content>${escapeXML(section.content)}</content>
+                    <subsections>
+            `;
+
+        (section.subsections || []).forEach(subsection => {
+          xml += buildSectionXML(subsection);
+        });
+
+        xml += `
+                    </subsections>
+                </section>
+            `;
+
+        return xml;
+      };
+
+      // Start XML document.
+      let xml = `<?xml version="1.0" encoding="UTF-8"?>`;
+
+      xml += `<report>`;
+
+      // Report properties.
+      xml += `
+            <reportid>${escapeXML(report.reportid)}</reportid>
+            <projectid>${escapeXML(report.projectid)}</projectid>
+            <projectnumber>${escapeXML(project.projectnumber)}</projectnumber>
+            <projectaddress>${escapeXML(project.projectaddress)}</projectaddress>
+            <projectcity>${escapeXML(project.projectcity)}</projectcity>
+            <projecttitle>${escapeXML(project.title)}</projecttitle>
+            <reporttitle>${escapeXML(report.reporttitle)}</reporttitle>
+            <client>${escapeXML(client)}</client>
+            <type>${escapeXML(report.type)}</type>
+            <datereport>${escapeXML(formatDateReport(report.datereport))}</datereport>
+            <author>${escapeXML(report.author)}</author>
+        `;
+
+      // Report sections.
+      xml += `<sections>`;
+
+      (report.sections || []).forEach(section => {
+        xml += buildSectionXML(section);
+      });
+
+      xml += `</sections>`;
+
+      xml += `</report>`;
+
+      let format = 'pdf'
+      const filename = `GFK-Report-${project.projectnumber}.${format}`;
+
+      streamFOP(
+        xml,
+        'xsl/gfkreport.xsl',
+        res,
+        filename,
+        format
+      );
+
+      // Return XML.
+      // return res
+      //   .status(200)
+      //   .type('application/xml')
+      //   .send(xml);
+
+    } catch (err) {
+      console.error('GFK XML generation error:', err);
+
+      return res.status(500).send('Server error');
+    }
+  });
+
 
   app.get('/gfk/xml/:projectid/labsummary', async (req, res) => {
     try {
