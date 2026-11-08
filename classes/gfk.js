@@ -1,6 +1,10 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs'
 import transporter from '../functions/mailer.js';
+import UnconfinedCalcs from './unconfinedcalcs.js';
+import { calcdryden, calcmoist } from '../functions/gfkfunctions.js';
+import SoilClassification from './soilclassification.js';
+
 
 const ProjectSchema = new mongoose.Schema({
     companyid: String,
@@ -25,7 +29,16 @@ const ProjectSchema = new mongoose.Schema({
 const sectionSchema = new mongoose.Schema({
     sectionid: String,
     section: String,
+    type: String,
     content: {
+        type: String,
+        default: ''
+    },
+    type: {
+    type: String,
+    default: 'text'
+    },
+    referenceid: {
         type: String,
         default: ''
     },
@@ -52,6 +65,21 @@ const reportSchema = new mongoose.Schema({
         type: [sectionSchema],
         default: []
     }
+});
+
+const figureSchema = new mongoose.Schema({
+    projectid: String,
+    figures: [{
+        figureid: String,
+        figuretitle: String,
+        figureurl: String,
+        figurecaption: String,
+        orientation: {
+            type: String,
+            enum: ['portrait', 'landscape'],
+            default: 'portrait'
+        }
+    }]
 });
 
 
@@ -437,10 +465,13 @@ const GFKCompany = mongoose.model("GFKCompany", gfkSchema, "gfkcompany")
 const TimeSheets = mongoose.model("timesheets", TimesheetSchema)
 const Schedules = mongoose.model("schedules", ScheduleSchema)
 const GFKReports = mongoose.model("gfkreports", reportSchema)
+const GFKFigures = mongoose.model("gfkfigures", figureSchema)
 
 
 
 class GFK {
+
+
 
     async saveEngineerProfile(engineer_id, profile) {
         try {
@@ -1843,6 +1874,309 @@ class GFK {
         }
     }
 
+    
+
+calculateLabSummary(project, borings = []) {
+
+    const unconfinedcalcs = new UnconfinedCalcs();
+
+    const validNumber = (value, decimals = null) => {
+
+        if (value === null || value === undefined || value === '') {
+            return '';
+        }
+
+        const number = Number(value);
+
+        if (!Number.isFinite(number)) return '';
+
+        return decimals === null
+            ? number
+            : number.toFixed(decimals);
+    };
+
+    const samples = [];
+
+    for (const boring of borings) {
+
+        for (const sample of boring.samples || []) {
+
+            const sampleno =
+                `${boring.boringnumber ?? ''}-` +
+                `${sample.sampleset ?? ''}` +
+                `(${sample.samplenumber ?? ''})`;
+
+            // Dry density
+            const dryden = calcdryden(
+                sample.wetwgt_2,
+                sample.wetwgt,
+                sample.tarewgt,
+                sample.drywgt,
+                sample.diameter,
+                sample.samplelength
+            );
+
+            // Moisture content
+            const moisture = calcmoist(
+                sample.drywgt,
+                sample.tarewgt,
+                sample.wetwgt,
+                sample.wetwgt_2
+            );
+
+            const ll = Number(sample.ll) > 0
+                ? Number(sample.ll)
+                : '';
+
+            const pi = Number(sample.pi) > 0
+                ? Number(sample.pi)
+                : '';
+
+            // Unconfined compression
+            const stress = unconfinedcalcs.getMaxStress(sample);
+            const strain = unconfinedcalcs.getMaxStrain(sample);
+
+            // Sieve analysis
+            let sieveresult = '';
+
+            if (sample.sieve) {
+
+                const sieve = sample.sieve;
+
+                const netwgt =
+                    Number(sample.drywgt) -
+                    Number(sample.tarewgt);
+
+                const SC = new SoilClassification(
+                    netwgt,
+                    ll,
+                    pi,
+                    Number(sieve.wgt34),
+                    Number(sieve.wgt38),
+                    Number(sieve.wgt4),
+                    Number(sieve.wgt10),
+                    Number(sieve.wgt30),
+                    Number(sieve.wgt40),
+                    Number(sieve.wgt100),
+                    Number(sieve.wgt200)
+                );
+
+                const gravel = Number(SC.getGravFrac());
+                const sand = Number(SC.getSandFrac());
+                const fines = Number(SC.getFines());
+
+                const parts = [];
+
+                if (Number.isFinite(gravel) && gravel > 0) {
+                    parts.push(`Gravel ${gravel}%`);
+                }
+
+                if (Number.isFinite(sand) && sand > 0) {
+                    parts.push(`Sand ${sand}%`);
+                }
+
+                if (Number.isFinite(fines) && fines > 0) {
+                    parts.push(`Fines ${fines}%`);
+                }
+
+                sieveresult = parts.join(', ');
+            }
+
+            samples.push({
+                boringid: boring.boringid,
+                sampleid: sample.sampleid,
+                sampleno,
+                depth: sample.depth ?? '',
+                dryden: validNumber(dryden),
+                moist: validNumber(moisture) === ''
+                    ? ''
+                    : validNumber(Number(moisture) * 100, 1),
+                ll,
+                pi,
+                un: Number(stress) > 0
+                    ? validNumber(stress)
+                    : '',
+                strain: Number(strain) > 0
+                    ? validNumber(strain)
+                    : '',
+                sieve: sieveresult
+            });
+        }
+    }
+
+    return {
+        projectid: project.projectid,
+        projectnumber: project.projectnumber,
+        reporttitle: 'SUMMARY OF LABORATORY TEST RESULTS',
+        title: project.title,
+        projecttitle: project.title,
+        projectaddress: project.projectaddress,
+        projectcity: project.projectcity,
+        samples
+    };
+}
+
+
+async loadLabSummary(projectid, options = {}) {
+
+    const gfk = new GFK();
+    const unconfinedcalcs = new UnconfinedCalcs();
+
+    // Reuse project/borings if already loaded by
+    // the complete geotechnical report route.
+    const [project, borings] = await Promise.all([
+        options.project ?? gfk.getProjectById(projectid),
+        options.borings ?? gfk.loadBorings(projectid)
+    ]);
+
+    if (!project) {
+        throw new Error(`Project not found: ${projectid}`);
+    }
+
+    const validNumber = (value, decimals = null) => {
+
+        if (value === null || value === undefined || value === '') {
+            return '';
+        }
+
+        const number = Number(value);
+
+        if (!Number.isFinite(number)) {
+            return '';
+        }
+
+        return decimals === null
+            ? number
+            : number.toFixed(decimals);
+    };
+
+    const samples = [];
+
+    for (const boring of Array.isArray(borings) ? borings : []) {
+
+        if (!Array.isArray(boring.samples)) continue;
+
+        for (const sample of boring.samples) {
+
+            const sampleno =
+                `${boring.boringnumber ?? ''}-` +
+                `${sample.sampleset ?? ''}` +
+                `(${sample.samplenumber ?? ''})`;
+
+            // DRY DENSITY
+            const dryden = calcdryden(
+                sample.wetwgt_2,
+                sample.wetwgt,
+                sample.tarewgt,
+                sample.drywgt,
+                sample.diameter,
+                sample.samplelength
+            );
+
+            // MOISTURE CONTENT
+            const moistureResult = calcmoist(
+                sample.drywgt,
+                sample.tarewgt,
+                sample.wetwgt,
+                sample.wetwgt_2
+            );
+
+            const moist =
+                validNumber(moistureResult) === ''
+                    ? ''
+                    : validNumber(Number(moistureResult) * 100, 1);
+
+            // ATTERBERG LIMITS
+            const ll = Number(sample.ll) > 0
+                ? Number(sample.ll)
+                : '';
+
+            const pi = Number(sample.pi) > 0
+                ? Number(sample.pi)
+                : '';
+
+            // UNCONFINED COMPRESSION
+            const stress = unconfinedcalcs.getMaxStress(sample);
+            const strain = unconfinedcalcs.getMaxStrain(sample);
+
+            // SIEVE ANALYSIS
+            let sieveresult = '';
+
+            if (sample.sieve) {
+
+                const sieve = sample.sieve;
+
+                const netwgt =
+                    Number(sample.drywgt) -
+                    Number(sample.tarewgt);
+
+                const SC = new SoilClassification(
+                    netwgt,
+                    ll,
+                    pi,
+                    Number(sieve.wgt34),
+                    Number(sieve.wgt38),
+                    Number(sieve.wgt4),
+                    Number(sieve.wgt10),
+                    Number(sieve.wgt30),
+                    Number(sieve.wgt40),
+                    Number(sieve.wgt100),
+                    Number(sieve.wgt200)
+                );
+
+                const gravel = Number(SC.getGravFrac());
+                const sand = Number(SC.getSandFrac());
+                const fines = Number(SC.getFines());
+
+                const parts = [];
+
+                if (Number.isFinite(gravel) && gravel > 0) {
+                    parts.push(`Gravel ${gravel}%`);
+                }
+
+                if (Number.isFinite(sand) && sand > 0) {
+                    parts.push(`Sand ${sand}%`);
+                }
+
+                if (Number.isFinite(fines) && fines > 0) {
+                    parts.push(`Fines ${fines}%`);
+                }
+
+                sieveresult = parts.join(', ');
+            }
+
+            // STORE CALCULATED SAMPLE
+            samples.push({
+                boringid: boring.boringid,
+                sampleid: sample.sampleid,
+                sampleno,
+                depth: sample.depth ?? '',
+                dryden: validNumber(dryden),
+                moist,
+                ll,
+                pi,
+                un: Number(stress) > 0 ? validNumber(stress) : '',
+                strain: Number(strain) > 0 ? validNumber(strain) : '',
+                sieve: sieveresult
+            });
+        }
+    }
+
+    // RETURN LAB SUMMARY OBJECT
+    return {
+        projectid,
+        projectnumber: project.projectnumber,
+        reporttitle: 'SUMMARY OF LABORATORY TEST RESULTS',
+        title: project.title,
+        projecttitle: project.title,
+        projectaddress: project.projectaddress,
+        projectcity: project.projectcity,
+        samples
+    };
+}
+
+    
+
 
     async registerNewUser(newEngineer) {
         try {
@@ -1910,4 +2244,4 @@ class GFK {
 }
 
 export default GFK;
-export { GFKCompany, MyProjects, TimeSheets, Schedules };       // named export
+export { GFKCompany, MyProjects, TimeSheets, Schedules, GFKFigures };       // named export

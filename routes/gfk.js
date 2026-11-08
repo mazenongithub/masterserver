@@ -13,6 +13,17 @@ import SoilClassification from '../classes/soilclassification.js';
 import ChatUser from '../classes/chatuser.js'
 import CivilEngineer from '../classes/civilengineer.js'
 import { rateLimiter } from '../middleware/ratelimit.js';
+import { uploadImage, getImage, downloadImage } from '../functions/b2storage.js';
+import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
+import { pathToFileURL } from 'node:url';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import SDC from '../classes/sdc.js';
+import Figures from '../classes/figures.js';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+
+
 
 
 export default (app) => {
@@ -45,7 +56,20 @@ export default (app) => {
 
   // Routes
   const uploadFieldImage = multer({ storage: createStorage('uploads/gfk/fieldimages') });
-  const uploadLogDraft = multer({ storage: createStorage('uploads/gfk/logdraft') });
+
+  const uploadFileImage = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 10 * 1024 * 1024
+    },
+    fileFilter: (req, file, cb) => {
+      if (['image/jpeg', 'image/png'].includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only JPEG and PNG images are allowed'));
+      }
+    }
+  })
 
 
   app.ws("/:clientid/projects/:projectid/websocketapi", function (ws, req, next) {
@@ -72,7 +96,7 @@ export default (app) => {
       ws.on("message", function (jsonData) {
         try {
 
-          console.log("message", jsonData)
+          // console.log("message", jsonData)
 
           // compare saved company to data
 
@@ -90,7 +114,7 @@ export default (app) => {
 
 
       ws.on("close", function () {
-        console.log("close")
+        // console.log("close")
         try {
           user.handleClose();
         } catch (err) {
@@ -103,6 +127,7 @@ export default (app) => {
 
 
   })
+
 
   app.post('/gfk/savecontactus', rateLimiter, async (req, res) => {
     const gfk = new GFK();
@@ -272,59 +297,499 @@ export default (app) => {
   );
 
 
-  app.post('/gfk/uploadgraphiclog', checkSessionGFK, uploadLogDraft.single('graphiclog'), async (req, res) => {
+
+  app.get(
+    '/gfk/:projectid/figures/:figureid/reportxml',
+
+    async (req, res) => {
+
+        try {
+            const { projectid, figureid } = req.params;
+
+            const gfk = new GFK();
+            const figureHandler = new Figures();
+
+            // Load project and figures
+            const [project, figures] = await Promise.all([
+                gfk.getProjectById(projectid),
+                figureHandler.loadProjectFigures(projectid)
+            ]);
+
+            if (!project) {
+                return res.status(404).json({
+                    Error: 'Project not found'
+                });
+            }
+
+            // Verify that the authenticated user
+            // is authorized to access this project.
+
+            const figure = figures.find(
+                f => f.figureid === figureid
+            );
+
+            if (!figure) {
+                return res.status(404).json({
+                    Error: 'Figure not found'
+                });
+            }
+
+            // XML escaping
+            const escapeXML = value => {
+                return String(value ?? '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&apos;');
+            };
+
+            // Image retrieval URL for preview purposes
+            const baseURL = (
+                process.env.GFK_API_PUBLIC_URL ||
+                `${req.protocol}://${req.get('host')}`
+            ).replace(/\/$/, '');
+
+            const imageURL = figure.figureurl
+                ? `${baseURL}/gfk/${encodeURIComponent(projectid)}/figures/${encodeURIComponent(figureid)}/image`
+                : '';
+
+            // Configure this to your actual company logo URI
+            const logoURL =
+                process.env.GFK_REPORT_LOGO_URI || '';
+
+            const orientation =
+                figure.orientation === 'landscape'
+                    ? 'landscape'
+                    : 'portrait';
+
+            // Build figure XML
+            const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<figure>
+    <projectid>${escapeXML(projectid)}</projectid>
+    <projecttitle>${escapeXML(project.title)}</projecttitle>
+    <projectaddress>${escapeXML(project.projectaddress)}</projectaddress>
+    <projectcity>${escapeXML(project.projectcity)}</projectcity>
+    <projectnumber>${escapeXML(project.projectnumber)}</projectnumber>
+
+    <figureid>${escapeXML(figure.figureid)}</figureid>
+    <figuretitle>${escapeXML(figure.figuretitle)}</figuretitle>
+    <figurecaption>${escapeXML(figure.figurecaption)}</figurecaption>
+    <orientation>${escapeXML(orientation)}</orientation>
+
+    <figureurl>${escapeXML(figure.figureurl)}</figureurl>
+    <imageurl>${escapeXML(imageURL)}</imageurl>
+    <logourl>${escapeXML(logoURL)}</logourl>
+</figure>`;
+
+            res.setHeader(
+                'Content-Type',
+                'application/xml; charset=utf-8'
+            );
+
+            res.setHeader(
+                'Cache-Control',
+                'no-store'
+            );
+
+            return res.status(200).send(xml);
+
+        } catch (err) {
+
+            console.error('Error generating figure XML:', err);
+
+            return res.status(500).json({
+                Error: `Could not generate figure XML: ${err.message}`
+            });
+        }
+    }
+);
+
+  app.get(
+    '/gfk/:projectid/figures/:figureid/image',
+  
+    async (req, res) => {
+
+      try {
+        const { projectid, figureid } = req.params;
+
+        const figureHandler = new Figures();
+
+        // Load project figures
+        const figures = await figureHandler.loadProjectFigures(
+          projectid
+        );
+
+        // Find requested figure
+        const figure = figures.find(
+          f => f.figureid === figureid
+        );
+
+        if (!figure?.figureurl) {
+          return res.status(404).json({
+            message: 'Figure image not found'
+          });
+        }
+
+        // Also verify that the authenticated user
+        // is authorized to view this project.
+
+        const key = figure.figureurl;
+
+        // Validate B2 storage location
+        if (
+          !key.startsWith(
+            `gfk/figures/${encodeURIComponent(projectid)}/`
+          )
+        ) {
+          return res.status(400).json({
+            message: 'Invalid B2 image key'
+          });
+        }
+
+        // Download image using existing helper
+        const image = await getImage(key);
+
+        res.setHeader(
+          'Content-Type',
+          image.ContentType || 'image/jpeg'
+        );
+
+        res.setHeader(
+          'Cache-Control',
+          'private, max-age=300'
+        );
+
+        Readable.fromWeb(
+          image.Body.transformToWebStream()
+        )
+          .on('error', err => {
+            console.error('Figure image stream error:', err);
+            res.destroy(err);
+          })
+          .pipe(res);
+
+      } catch (err) {
+
+        console.error('Figure image error:', err);
+
+        if (!res.headersSent) {
+          return res.status(500).json({
+            message: 'Unable to retrieve figure image'
+          });
+        }
+
+        res.destroy();
+      }
+    }
+  );
+
+
+  app.get('/gfk/graphiclog/:projectid/:boringid/:sampleid',
+
+    async (req, res) => {
+      try {
+
+        const { projectid, boringid, sampleid } = req.params;
+
+
+        const gfk = new GFK();
+        const borings = await gfk.loadBorings(projectid);
+
+        const boring = borings?.find(
+          b => b.boringid === boringid
+        );
+
+        const sample = boring?.samples?.find(
+          s => s.sampleid === sampleid
+        );
+
+        if (!sample?.graphiclog) {
+          return res.status(404).json({
+            message: 'Graphic log not found'
+          });
+        }
+
+        // Also verify that the authenticated user
+        // is authorized to view this project.
+
+        const key = sample.graphiclog;
+
+        if (!key.startsWith('gfk/logdraft/')) {
+          return res.status(400).json({
+            message: 'Invalid B2 image key'
+          });
+        }
+
+        const image = await getImage(key);
+
+        res.setHeader(
+          'Content-Type',
+          image.ContentType || 'image/jpeg'
+        );
+
+        res.setHeader('Cache-Control', 'private, max-age=300');
+
+        Readable.fromWeb(image.Body.transformToWebStream())
+          .on('error', err => {
+            console.error('Image stream error:', err);
+            res.destroy(err);
+          })
+          .pipe(res);
+
+      } catch (err) {
+        console.error('Graphic log error:', err);
+
+        if (!res.headersSent) {
+          res.status(500).json({
+            message: 'Unable to retrieve image'
+          });
+        }
+      }
+    }
+  );
+
+
+  app.post('/gfk/:projectid/figures/savefigures', checkSessionGFK, async (req, res) => {
+
     try {
-      const { projectid, boringid, sampleid } = req.body;
-      const fileUrl = `/uploads/gfk/logdraft/${req.file.filename}`;
+      const { projectid } = req.params;
+      const { figures } = req.body;
 
-      const gfk = new GFK();
-      const borings = await gfk.loadBorings(projectid);
+      const figureHandler = new Figures();
 
-      if (!borings) {
-        return res.status(404).json({ success: false, message: "Borings not found" });
+      if (!Array.isArray(figures)) {
+        return res.status(400).json({
+          Error: 'Invalid figures array'
+        });
       }
 
-      // ✔ Find boring index safely
-      const boringIndex = borings.findIndex(b => b.boringid === boringid);
-      if (boringIndex === -1) {
-        return res.status(404).json({ success: false, message: "Boring not found" });
-      }
-
-      const boring = borings[boringIndex];
-
-      // ✔ Find sample index safely
-      const sampleIndex = boring.samples.findIndex(s => s.sampleid === sampleid);
-      if (sampleIndex === -1) {
-        return res.status(404).json({ success: false, message: "Sample not found" });
-      }
-
-      // ✔ Update the graphic log
-      borings[boringIndex].samples[sampleIndex].graphiclog = fileUrl;
-
-      // ✔ Save updated borings
-      const myBorings = { projectid, borings }
-      const updatedBorings = await gfk.saveBorings(myBorings);
-
-      const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+      const savedFigures = await figureHandler.updateProjectFigures(
+        projectid,
+        figures
+      );
 
       return res.status(200).json({
-        success: true,
-        count: updatedBorings?.length || borings.length,
-        borings: updatedBorings || borings,
-        message: `Borings Saved Successfully - ${timestamp}`,
-        graphiclog: fileUrl,
+        message: `Figures saved ${formatDateTime(new Date())}`,
+        figures: savedFigures
       });
 
     } catch (err) {
-      console.error("❌ Error uploading graphic log:", err);
+
+      console.error('Error saving project figures:', err);
 
       return res.status(500).json({
-        success: false,
-        message: "Error: Could not upload graphic log",
-        error: err.message,
+        Error: `Could not save project figures: ${err.message}`
       });
     }
+
   });
+
+  app.post(
+    '/gfk/:projectid/uploadfileimage/:figureid',
+    checkSessionGFK,
+    uploadFileImage.single('fileimage'),
+    async (req, res) => {
+
+      try {
+        const { projectid, figureid } = req.params;
+
+        const figureHandler = new Figures();
+
+        // Validate uploaded file
+        if (!req.file?.buffer) {
+          return res.status(400).json({
+            Error: 'No image file uploaded'
+          });
+        }
+
+        // Parse figures from FormData
+        const projectFigures = JSON.parse(
+          req.body.figures || '[]'
+        );
+
+        if (!Array.isArray(projectFigures)) {
+          return res.status(400).json({
+            Error: 'Invalid figures array'
+          });
+        }
+
+        // Determine file extension
+        const extensions = {
+          'image/jpeg': '.jpg',
+          'image/png': '.png',
+          'image/webp': '.webp'
+        };
+
+        const extension = extensions[req.file.mimetype];
+
+        if (!extension) {
+          return res.status(400).json({
+            Error: 'Unsupported image format'
+          });
+        }
+
+        // Generate unique filename
+        const filename = `${randomUUID()}${extension}`;
+
+        // Generate Backblaze B2 file key
+        const fileKey = `gfk/figures/${encodeURIComponent(projectid)}/${encodeURIComponent(figureid)}/${filename}`;
+
+        // Upload image to Backblaze B2
+        await uploadImage(
+          fileKey,
+          req.file.buffer,
+          req.file.mimetype
+        );
+
+        // Find figure within project figures
+        const figureIndex = projectFigures.findIndex(
+          figure => figure.figureid === figureid
+        );
+
+        if (figureIndex >= 0) {
+
+          // Update existing figure
+          projectFigures[figureIndex].figureurl = fileKey;
+
+        } else {
+
+          // Add new figure
+          projectFigures.push({
+            figureid,
+            figuretitle: req.body.figuretitle || '',
+            figureurl: fileKey,
+            figurecaption: req.body.figurecaption || ''
+          });
+        }
+
+        // Save entire figures array to MongoDB
+        const updatedFigures = await figureHandler.updateProjectFigures(
+          projectid,
+          projectFigures
+        );
+
+        // Return updated figures
+        return res.status(200).json(updatedFigures);
+
+      } catch (err) {
+
+        console.error('Error uploading figure:', err);
+
+        return res.status(500).json({
+          Error: `Could not upload fileimage: ${err.message}`
+        });
+      }
+    }
+  );
+
+
+  app.post('/gfk/uploadgraphiclog',
+    checkSessionGFK,
+    uploadFileImage.single('graphiclog'),
+    async (req, res) => {
+      try {
+        const { projectid, boringid, sampleid } = req.body;
+
+        if (!req.file) {
+          return res.status(400).json({
+            success: false,
+            message: 'No image uploaded'
+          });
+        }
+
+        if (!projectid || !boringid || !sampleid) {
+          return res.status(400).json({
+            success: false,
+            message: 'Missing projectid, boringid or sampleid'
+          });
+        }
+
+        const gfk = new GFK();
+        const borings = await gfk.loadBorings(projectid);
+
+        if (!borings) {
+          return res.status(404).json({
+            success: false,
+            message: 'Borings not found'
+          });
+        }
+
+        const boringIndex = borings.findIndex(
+          b => b.boringid === boringid
+        );
+
+        if (boringIndex === -1) {
+          return res.status(404).json({
+            success: false,
+            message: 'Boring not found'
+          });
+        }
+
+        const boring = borings[boringIndex];
+
+        const sampleIndex = boring.samples.findIndex(
+          s => s.sampleid === sampleid
+        );
+
+        if (sampleIndex === -1) {
+          return res.status(404).json({
+            success: false,
+            message: 'Sample not found'
+          });
+        }
+
+        // Verify the session user can modify this project.
+        // checkSessionGFK authenticates the user, but project
+        // authorization should also be enforced here.
+
+        const extension = req.file.mimetype === 'image/png'
+          ? '.png'
+          : '.jpg';
+
+        const filename = `${Date.now()}-${randomUUID()}${extension}`;
+
+        const fileKey = `gfk/logdraft/${filename}`;
+
+        // Upload image to Backblaze B2
+        await uploadImage(
+          fileKey,
+          req.file.buffer,
+          req.file.mimetype
+        );
+
+        // Save B2 object key in MongoDB
+        borings[boringIndex]
+          .samples[sampleIndex]
+          .graphiclog = fileKey;
+
+        const myBorings = { projectid, borings };
+
+        const updatedBorings = await gfk.saveBorings(myBorings);
+
+        const timestamp = new Date().toLocaleString(
+          'en-US',
+          { timeZone: 'America/Los_Angeles' }
+        );
+
+        return res.status(200).json({
+          success: true,
+          count: updatedBorings?.length || borings.length,
+          borings: updatedBorings || borings,
+          message: `Borings Saved Successfully - ${timestamp}`,
+          graphiclog: fileKey
+        });
+
+      } catch (err) {
+        console.error('Error uploading graphic log:', err);
+
+        return res.status(500).json({
+          success: false,
+          message: 'Error: Could not upload graphic log'
+        });
+      }
+    }
+  );
   ;
 
 
@@ -782,48 +1247,50 @@ export default (app) => {
   });
 
 
+  app.post("/gfk/:projectid/sdc", async (req, res) => {
+    try {
+      const sdcHandler = new SDC();
 
+      const { projectid } = req.params;
+      const { sdc } = req.body;
 
+      if (!projectid) {
+        return res.status(400).json({
+          error: "ProjectID is required"
+        });
+      }
 
+      const response = await sdcHandler.handleCriteria(projectid, sdc);
 
+      return res.status(200).json(response);
 
+    } catch (err) {
+      console.error("Error updating Seismic Design Criteria:", err);
 
-
+      return res.status(500).json({
+        error: "Could not update Seismic Design Criteria"
+      });
+    }
+  });
 
 
 
   app.get("/gfk/:projectid/loadproject", checkSessionGFK, async (req, res) => {
     try {
       const { projectid } = req.params;
-      const gfk = new GFK();
 
       if (!projectid) {
         return res.status(400).json({
           success: false,
-          message: "Missing project ID in request parameters.",
+          message: "Missing project ID."
         });
       }
 
-      // Load borings and field reports in parallel
-      const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = [], timesheet = [], schedule = [], reports = []] = await Promise.all([
-        gfk.loadBorings(projectid).catch(() => []),
-        gfk.loadFieldReports(projectid).catch(() => []),
-        gfk.loadCompactionCurves(projectid).catch(() => []),
-        gfk.loadSeismic(projectid).catch(() => []),
-        gfk.loadPTSlab(projectid).catch(() => []),
-        gfk.loadSlope(projectid).catch(() => []),
-        gfk.loadTimesheet(projectid).catch(() => []),
-        gfk.loadSchedule(projectid).catch(() => []),
-        gfk.loadReports(projectid).catch(() => [])
+      const gfk = new GFK();
+      const sdcHandler = new SDC();
+      const figureHandler = new Figures();
 
-      ]);
-
-
-
-      // Return response with projectid attached
-      return res.status(200).json({
-        success: true,
-        projectid,
+      const [
         borings,
         fieldreports,
         compactioncurves,
@@ -833,21 +1300,62 @@ export default (app) => {
         timesheet,
         schedule,
         reports,
-        hasData: borings.length > 0 || fieldreports.length > 0,
-        message:
-          borings.length === 0 && fieldreports.length === 0
-            ? "No borings or field reports found for this project."
-            : undefined,
+        sdc,
+        figures
+      ] = await Promise.all([
+        gfk.loadBorings(projectid),
+        gfk.loadFieldReports(projectid),
+        gfk.loadCompactionCurves(projectid),
+        gfk.loadSeismic(projectid),
+        gfk.loadPTSlab(projectid),
+        gfk.loadSlope(projectid),
+        gfk.loadTimesheet(projectid),
+        gfk.loadSchedule(projectid),
+        gfk.loadReports(projectid),
+        sdcHandler.loadSeismicDesignCriteria(projectid),
+        figureHandler.loadProjectFigures(projectid)
+      ]);
+
+      const projectData = {
+        borings: borings ?? [],
+        fieldreports: fieldreports ?? [],
+        compactioncurves: compactioncurves ?? [],
+        seismic: seismic ?? [],
+        ptslab: ptslab ?? [],
+        slope: slope ?? [],
+        timesheet: timesheet ?? [],
+        schedule: schedule ?? [],
+        reports: reports ?? [],
+        SDC: sdc ?? null,
+        figures: figures ?? []
+      };
+
+      const hasData = Object.values(projectData).some(value =>
+        Array.isArray(value)
+          ? value.length > 0
+          : value !== null && value !== undefined
+      );
+
+      return res.status(200).json({
+        success: true,
+        projectid,
+        ...projectData,
+        hasData,
+        message: hasData
+          ? "Project data loaded successfully."
+          : "No project data found."
       });
+
     } catch (err) {
-      console.error("❌ Error loading project:", err);
+      console.error("Error loading project:", err);
+
       return res.status(500).json({
         success: false,
-        message: "Error: Could not load project data.",
-        error: err.message,
+        message: "Could not load project data."
       });
     }
   });
+
 
   app.post('/:gfk/users/clientlogin', async (req, res) => {
     try {
@@ -976,106 +1484,120 @@ export default (app) => {
     }
   });
 
+
   app.get('/gfk/xml/:projectid/boring/:boringid', async (req, res) => {
     const gfk = new GFK();
     const { projectid, boringid } = req.params;
 
-    try {
-        const boring = await gfk.getBoringById(projectid, boringid);
+    let tempDir;
 
-        if (!boring) {
-            return res.status(404).send({
-                Error: 'Boring not found'
-            });
+    try {
+      const [project, boring] = await Promise.all([
+        gfk.getProjectById(projectid),
+        gfk.getBoringById(projectid, boringid)
+      ]);
+
+      if (!project) {
+        return res.status(404).json({
+          Error: 'Project not found'
+        });
+      }
+
+      if (!boring) {
+        return res.status(404).json({
+          Error: 'Boring not found'
+        });
+      }
+
+      // Streaming FOP Downloads to internal temporary directory replaces samplepath with dir
+
+      // Create a unique temporary directory for this PDF
+      // tempDir = await mkdtemp(
+      //   path.join(tmpdir(), 'gfk-logdraft-')
+      // );
+
+      // Download graphic log images from Backblaze B2
+      // const samples = await Promise.all(
+      //   (boring.samples || []).map(async (sample) => {
+
+      //     const sampleData =
+      //       typeof sample.toObject === 'function'
+      //         ? sample.toObject()
+      //         : sample;
+
+      //     if (!sampleData.graphiclog) {
+      //       return {
+      //         ...sampleData,
+      //         graphiclogPath: ''
+      //       };
+      //     }
+
+      //     const key = sampleData.graphiclog;
+
+      //     if (!/^gfk\/logdraft\/[a-zA-Z0-9._-]+\.(jpg|jpeg|png)$/i.test(key)) {
+      //       throw new Error(`Invalid graphic log key: ${key}`);
+      //     }
+
+      //     const localPath = path.join(
+      //       tempDir,
+      //       path.basename(key)
+      //     );
+
+      //     await downloadImage(key, localPath);
+
+      //     return {
+      //       ...sampleData,
+      //       graphiclogPath: pathToFileURL(localPath).href
+      //     };
+      //   })
+      // );
+
+
+
+
+      // OXYGEN Developer assembles URI fromBase URL accessible from Oxygen
+      const baseURL = process.env.SERVER_API
+
+      // Generate image URLs instead of downloading files
+      const samples = (boring.samples || []).map(sample => {
+
+        const sampleData =
+          typeof sample.toObject === 'function'
+            ? sample.toObject()
+            : sample;
+
+        let graphiclogPath = '';
+
+        if (sampleData.graphiclog) {
+
+          const key = sampleData.graphiclog;
+
+          if (!/^gfk\/logdraft\/[a-zA-Z0-9._-]+\.(jpg|jpeg|png)$/i.test(key)) {
+            throw new Error(`Invalid graphic log key: ${key}`);
+          }
+
+          graphiclogPath =
+            `${baseURL}/gfk/graphiclog/` +
+            `${encodeURIComponent(projectid)}/` +
+            `${encodeURIComponent(boringid)}/` +
+            `${encodeURIComponent(sampleData.sampleid)}`;
         }
 
-        // Build XML document
-        const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<log>
-    <boring>
-        <boringid>${boring.boringid || ''}</boringid>
-        <projectid>${boring.projectid || projectid}</projectid>
-        <boringnumber>${boring.boringnumber || ''}</boringnumber>
-        <datedrilled>${boring.datedrilled || ''}</datedrilled>
-        <loggedby>${boring.loggedby || ''}</loggedby>
-        <drillrig>${boring.drillrig || ''}</drillrig>
-        <elevation>${boring.elevation || ''}</elevation>
-        <diameter>${boring.diameter || ''}</diameter>
-        <gwdepth>${boring.gwdepth || ''}</gwdepth>
-        <latitude>${boring.latitude || ''}</latitude>
-        <longitude>${boring.longitude || ''}</longitude>
-        <samples>
-            ${(boring.samples || []).map(sample => `
-            <sample>
-                <sampleid>${sample.sampleid || ''}</sampleid>
-                <sampleset>${sample.sampleset || ''}</sampleset>
-                <samplenumber>${sample.samplenumber || ''}</samplenumber>
-                <sampledepth>${sample.sampledepth || ''}</sampledepth>
-                <depth>${sample.depth || ''}</depth>
-                <diameter>${sample.diameter || ''}</diameter>
-                <samplelength>${sample.samplelength || ''}</samplelength>
-                <description>${sample.description || ''}</description>
-                <uscs>${sample.uscs || ''}</uscs>
-                <spt>${sample.spt || ''}</spt>
-                <sptlength>${sample.sptlength || ''}</sptlength>
-                <graphiclog>${sample.graphiclog || ''}</graphiclog>
-                <remarks>${sample.remarks || ''}</remarks>
-                <drydensity>${sample.drydensity || ''}</drydensity>
-                <moisturecontent>${sample.moisturecontent || ''}</moisturecontent>
-                <unconfinedstrength>${sample.unconfinedstrength || ''}</unconfinedstrength>
-                <sieveanalysis>${sample.sieveanalysis || ''}</sieveanalysis>
-            </sample>`).join('')}
-        </samples>
-    </boring>
-</log>`;
+        return {
+          ...sampleData,
+          graphiclogPath
+        };
 
-        res.set('Content-Type', 'application/xml; charset=utf-8');
-        return res.status(200).send(xml);
-
-    } catch (err) {
-        console.error('GFK XML generation error:', err);
-
-        return res.status(500).send({
-            Error: `Server error ${err.message}`
-        });
-    }
-});
-
-
-  // Assuming you have a MongoDB `db` instance ready
-  // e.g., const db = client.db("yourDb");
-
-  app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
-    const gfk = new GFK();
-    
- 
+      });
 
 
 
-    try {
-      const { projectid, reportid } = req.params;
 
-      // Get the report.
-      const report = await gfk.getReportByID(
-        projectid,
-        reportid
-      );
-
-      if (!report) {
-        return res.status(404).send({
-          Error: 'Report not found.'
-        });
-      }
-
-      const toUpperCase = (value) => {
-        return typeof value === 'string'
-          ? value.trim().toUpperCase()
-          : value;
-      }
-
-      // Escape special XML characters.
+      // Escape values before inserting them into XML
       const escapeXML = (value) => {
-        return String(value ?? '')
+        if (value === null || value === undefined) return '';
+
+        return String(value)
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;')
@@ -1083,225 +1605,1030 @@ export default (app) => {
           .replace(/'/g, '&apos;');
       };
 
-      // Retrieve Project
+      const x = (value) => escapeXML(value);
 
-      const project = await gfk.getProjectById.call(this, projectid)
-      if (!project) {
-        throw new Error(`Project not found: ${projectid}`);
-      }
+      // Build XML document
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<log>
+    <boring>
+        <boringid>${x(boring.boringid)}</boringid>
+        <projectid>${x(boring.projectid || projectid)}</projectid>
+        <boringnumber>${x(boring.boringnumber)}</boringnumber>
+        <datedrilled>${x(boring.datedrilled)}</datedrilled>
+        <loggedby>${x(boring.loggedby)}</loggedby>
+        <drillrig>${x(boring.drillrig)}</drillrig>
+        <elevation>${x(boring.elevation)}</elevation>
+        <diameter>${x(boring.diameter)}</diameter>
+        <gwdepth>${x(boring.gwdepth)}</gwdepth>
+        <latitude>${x(boring.latitude)}</latitude>
+        <longitude>${x(boring.longitude)}</longitude>
+        <samples>
+            ${samples.map(sample => `
+            <sample>
+                <sampleid>${x(sample.sampleid)}</sampleid>
+                <sampleset>${x(sample.sampleset)}</sampleset>
+                <samplenumber>${x(sample.samplenumber)}</samplenumber>
+                <sampledepth>${x(sample.sampledepth)}</sampledepth>
+                <depth>${x(sample.depth)}</depth>
+                <diameter>${x(sample.diameter)}</diameter>
+                <samplelength>${x(sample.samplelength)}</samplelength>
+                <description>${x(sample.description)}</description>
+                <uscs>${x(sample.uscs)}</uscs>
+                <spt>${x(sample.spt)}</spt>
+                <sptlength>${x(sample.sptlength)}</sptlength>
+                <graphiclog>${x(sample.graphiclogPath)}</graphiclog>
+                <remarks>${x(sample.remarks)}</remarks>
+                <drydensity>${x(sample.drydensity)}</drydensity>
+                <moisturecontent>${x(sample.moisturecontent)}</moisturecontent>
+                <unconfinedstrength>${x(sample.unconfinedstrength)}</unconfinedstrength>
+                <sieveanalysis>${x(sample.sieveanalysis)}</sieveanalysis>
+            </sample>`).join('')}
+        </samples>
+    </boring>
+</log>`;
 
-      const client_id = project.clientid;
+      // streaming FOP
 
-      const getclient = await gfk.findClientByID(client_id)
+      // const format = 'pdf';
+
+      // const filename =
+      //   `GFK-Project-${project.projectnumber}` +
+      //   `-Boring-${boring.boringnumber}.${format}`;
+
+      //  streamFOP must return a Promise that resolves
+      //  only after FOP finishes using the image files.
+
+      // await streamFOP(
+      //   xml,
+      //   'xsl/logdraft.xsl',
+      //   res,
+      //   filename,
+      //   format
+      // );
 
 
+      // Testing API Oxygen XML
 
-      if (!getclient) {
-        throw new Error(`Client not found: ${client_id}`);
-      }
-
-      let client = `${getclient.prefix} ${getclient.firstname} ${getclient.lastname}`
-
-
-
-      // Build XML for a section and its nested subsections.
-      const buildSectionXML = (section) => {
-        let xml = `
-                <section>
-                    <title>${escapeXML(section.section)}</title>
-                    <content>${escapeXML(section.content)}</content>
-                    <subsections>
-            `;
-
-        (section.subsections || []).forEach(subsection => {
-          xml += buildSectionXML(subsection);
-        });
-
-        xml += `
-                    </subsections>
-                </section>
-            `;
-
-        return xml;
-      };
-
-      // Start XML document.
-      let xml = `<?xml version="1.0" encoding="UTF-8"?>`;
-
-      xml += `<report>`;
-
-      // Report properties.
-      xml += `
-            <reportid>${escapeXML(report.reportid)}</reportid>
-            <projectid>${escapeXML(report.projectid)}</projectid>
-            <projectnumber>${escapeXML(project.projectnumber)}</projectnumber>
-            <projectaddress>${escapeXML(project.projectaddress)}</projectaddress>
-            <projectcity>${escapeXML(project.projectcity)}</projectcity>
-            <projecttitle>${escapeXML(project.title)}</projecttitle>
-            <reporttitle>${escapeXML(report.reporttitle)}</reporttitle>
-            <client>${escapeXML(client)}</client>
-            <type>${escapeXML(report.type)}</type>
-            <datereport>${escapeXML(formatDateReport(report.datereport))}</datereport>
-            <author>${escapeXML(report.author)}</author>
-        `;
-
-      // Report sections.
-      xml += `<sections>`;
-
-      (report.sections || []).forEach(section => {
-        xml += buildSectionXML(section);
-      });
-
-      xml += `</sections>`;
-
-      xml += `</report>`;
-
-      let format = 'pdf'
-      const filename = `GFK-Report-${project.projectnumber}.${format}`;
-
-      streamFOP(
-        xml,
-        'xsl/gfkreport.xsl',
-        res,
-        filename,
-        format
-      );
-
-      // Return XML.
-      // return res
-      //   .status(200)
-      //   .type('application/xml')
-      //   .send(xml);
+      res.set('Content-Type', 'application/xml; charset=utf-8');
+      return res.status(200).send(xml);
 
     } catch (err) {
       console.error('GFK XML generation error:', err);
 
-      return res.status(500).send('Server error');
+      if (!res.headersSent) {
+        return res.status(500).json({
+          Error: `Server error: ${err.message}`
+        });
+      }
+
+      res.destroy(err);
+
+    } finally {
+
+      if (tempDir) {
+        await rm(tempDir, {
+          recursive: true,
+          force: true
+        });
+      }
     }
   });
 
 
-  app.get('/gfk/xml/:projectid/labsummary', async (req, res) => {
-    try {
-      const gfk = new GFK();
-      const unconfinedcalcs = new UnconfinedCalcs();
-      const { projectid } = req.params;
 
-      // Load project & borings in parallel
-      const [project, borings] = await Promise.all([
-        gfk.getProjectById(projectid),
-        gfk.loadBorings(projectid)
-      ]);
+  // Assuming you have a MongoDB `db` instance ready
+  // e.g., const db = client.db("yourDb");
 
-      if (!project) {
-        return res.status(404).send({ message: "Project not found" });
-      }
-
-      let xml = `
-      <labsummary>
-        <projectnumber>${project.projectnumber}</projectnumber>
-        <title>${project.title}</title>
-        <projectaddress>${project.projectaddress}</projectaddress>
-        <projectcity>${project.projectcity}</projectcity>
-    `;
-
-      if (Array.isArray(borings)) {
-        // Process all borings in parallel
-        const boringXML = await Promise.all(
-          borings.map(async (boring) => {
-            if (!Array.isArray(boring.samples)) return "";
-
-            // Process all samples inside each boring in parallel
-            const sampleXML = await Promise.all(
-              boring.samples.map(async (sample) => {
-                const sampleno = `${boring.boringnumber}-${sample.sampleset}(${sample.samplenumber})`;
-                const depth = sample.depth;
-
-                const dryden = calcdryden(
-                  sample.wetwgt_2,
-                  sample.wetwgt,
-                  sample.tarewgt,
-                  sample.drywgt,
-                  sample.diameter,
-                  sample.samplelength
-                );
-
-                const moist = Number(
-                  calcmoist(sample.drywgt, sample.tarewgt, sample.wetwgt, sample.wetwgt_2) * 100
-                ).toFixed(1);
-
-                const ll = Number(sample.ll) > 0 ? Number(sample.ll) : "";
-                const pi = Number(sample.pi) > 0 ? Number(sample.pi) : "";
-
-                const maxstress = Number(unconfinedcalcs.getMaxStress(sample)) > 0
-                  ? unconfinedcalcs.getMaxStress(sample)
-                  : "";
-
-                const maxstrain = Number(unconfinedcalcs.getMaxStrain(sample)) > 0
-                  ? unconfinedcalcs.getMaxStrain(sample)
-                  : "";
+ 
 
 
-                // --- SIEVE ---
-                let sieveresult = "";
-                const sieve = sample.sieve;
+app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
 
-                if (sieve) {
-                  const netwgt = Number(sample.drywgt) - Number(sample.tarewgt);
-                  const SC = new SoilClassification(
-                    netwgt, ll, pi,
-                    Number(sieve.wgt34),
-                    Number(sieve.wgt38),
-                    Number(sieve.wgt4),
-                    Number(sieve.wgt10),
-                    Number(sieve.wgt30),
-                    Number(sieve.wgt40),
-                    Number(sieve.wgt100),
-                    Number(sieve.wgt200)
-                  );
+    const gfk = new GFK();
+    const figureHandler = new Figures();
 
-                  const gravelfrac = Number(SC.getGravFrac());
-                  const sandfrac = Number(SC.getSandFrac());
-                  const fines = Number(SC.getFines());
+    // ============================================
+    // OUTPUT MODE
+    // ============================================
 
-                  if (gravelfrac > 0) sieveresult += `Gravel ${gravelfrac}%, `;
-                  if (sandfrac > 0) sieveresult += `Sand ${sandfrac}%, `;
-                  if (fines > 0) sieveresult += `Fines ${fines}%`;
+    const outputMode = 'xml'; // Oxygen Developer
+    // Change 'xml' to 'pdf' for Apache FOP
 
-                  sieveresult = sieveresult.trim().replace(/,$/, "");
-                }
+    let tempDir = null;
+    let cleanupStarted = false;
 
-                return `
-                <sample>
-                  <sampleno>${sampleno}</sampleno>
-                  <depth>${depth}</depth>
-                  <dryden>${dryden}</dryden>
-                  <moist>${moist}</moist>
-                  <ll>${ll}</ll>
-                  <pi>${pi}</pi>
-                  <un>${maxstress}</un>
-                  <strain>${maxstrain}</strain>
-                  <sieve>${sieveresult}</sieve>
-                </sample>`;
-              })
+    const cleanup = async () => {
+
+        if (!tempDir || cleanupStarted) return;
+
+        cleanupStarted = true;
+
+        try {
+            await rm(tempDir, {
+                recursive: true,
+                force: true
+            });
+        } catch (error) {
+            console.error(
+                'Temporary image cleanup error:',
+                error
             );
+        }
+    };
 
-            return sampleXML.join("");
-          })
+    try {
+
+        const { projectid, reportid } = req.params;
+
+        if (!['xml', 'pdf'].includes(outputMode)) {
+            return res.status(400).json({
+                Error: `Invalid output mode: ${outputMode}`
+            });
+        }
+
+        const isFOP = outputMode === 'pdf';
+
+        // HTTP base URL accessible from Oxygen Developer.
+        const publicBaseUrl = (
+            process.env.GFK_PUBLIC_BASE_URL ||
+            `${req.protocol}://${req.get('host')}`
+        ).replace(/\/+$/, '');
+
+        // ============================================
+        // LOAD PROJECT
+        // ============================================
+
+        const project = await gfk.getProjectById(projectid);
+
+        if (!project) {
+            return res.status(404).json({
+                Error: 'Project not found.'
+            });
+        }
+
+        // Apply session and project-level authorization
+        // before exposing this route in production.
+
+        // ============================================
+        // LOAD RELATED DATA
+        // ============================================
+
+        const [
+            report,
+            loadedBorings,
+            loadedFigures,
+            getclient
+        ] = await Promise.all([
+            gfk.getReportByID(projectid, reportid),
+            gfk.loadBorings(projectid),
+            figureHandler.loadProjectFigures(projectid),
+            gfk.findClientByID(project.clientid)
+        ]);
+
+        if (!report) {
+            return res.status(404).json({
+                Error: 'Report not found.'
+            });
+        }
+
+        if (!getclient) {
+            return res.status(404).json({
+                Error: 'Client not found.'
+            });
+        }
+
+        const borings = Array.isArray(loadedBorings)
+            ? loadedBorings
+            : [];
+
+        const figures = Array.isArray(loadedFigures)
+            ? loadedFigures
+            : [];
+
+        const client = [
+            getclient.prefix,
+            getclient.firstname,
+            getclient.lastname
+        ].filter(Boolean).join(' ');
+
+        // ============================================
+        // CALCULATE LABORATORY SUMMARY
+        // ============================================
+
+        // Reuse the borings already loaded above.
+        // No additional database queries.
+
+        const labsummary = gfk.calculateLabSummary(
+            project,
+            borings
         );
 
-        xml += boringXML.join("");
-      }
+        // ============================================
+        // XML HELPERS
+        // ============================================
 
-      xml += "</labsummary>";
+        const escapeXML = (value) => {
 
-      streamFOP(xml, 'xsl/labsummary.xsl', res, `labsummary-${project.projectnumber}.pdf`, 'pdf');
+            return String(value ?? '')
+                .replace(
+                    /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,
+                    ''
+                )
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&apos;');
+        };
+
+        const tag = (name, value) => {
+            return `<${name}>${escapeXML(value)}</${name}>`;
+        };
+
+        const reportDate = report.datereport
+            ? formatDateReport(report.datereport)
+            : '';
+
+        // ============================================
+        // TEMPORARY IMAGES FOR APACHE FOP
+        // ============================================
+
+        const localImages = new Map();
+        let imageCount = 0;
+
+        if (isFOP) {
+
+            tempDir = await mkdtemp(
+                path.join(tmpdir(), 'gfk-report-')
+            );
+        }
+
+        const getLocalImageUrl = async (key) => {
+
+            if (!key) return '';
+
+            // Avoid downloading the same image twice.
+            if (localImages.has(key)) {
+                return localImages.get(key);
+            }
+
+            if (/^(?:https?:\/\/|file:\/\/|\/)/i.test(key)) {
+                throw new Error(
+                    `Expected a Backblaze storage key: ${key}`
+                );
+            }
+
+            // Retrieve private image from Backblaze B2.
+            const image = await getImage(key);
+
+            if (!image?.Body) {
+                throw new Error(
+                    `Backblaze image not found: ${key}`
+                );
+            }
+
+            const allowedExtensions = new Set([
+                '.jpg',
+                '.jpeg',
+                '.png',
+                '.gif',
+                '.svg',
+                '.tif',
+                '.tiff'
+            ]);
+
+            const keyExtension =
+                path.extname(key).toLowerCase();
+
+            const extension =
+                allowedExtensions.has(keyExtension)
+                    ? keyExtension
+                    : '.jpg';
+
+            const destination = path.join(
+                tempDir,
+                `image-${++imageCount}${extension}`
+            );
+
+            const body = image.Body;
+
+            const source =
+                typeof body.pipe === 'function'
+                    ? body
+                    : Readable.fromWeb(
+                        typeof body.transformToWebStream === 'function'
+                            ? body.transformToWebStream()
+                            : body
+                    );
+
+            // Complete the download before FOP starts.
+            await pipeline(
+                source,
+                createWriteStream(destination)
+            );
+
+            const fileUrl =
+                pathToFileURL(destination).href;
+
+            localImages.set(key, fileUrl);
+
+            return fileUrl;
+        };
+
+        // ============================================
+        // IMAGE URL RESOLVER
+        // ============================================
+
+        const resolveImageUrl = async (key, httpUrl) => {
+
+            if (!key) return '';
+
+            // Oxygen uses HTTP image URLs.
+            if (!isFOP) {
+                return httpUrl;
+            }
+
+            // Apache FOP uses file:/// URLs.
+            return await getLocalImageUrl(key);
+        };
+
+        // ============================================
+        // RECURSIVE REPORT SECTIONS
+        // ============================================
+
+        const buildSectionXML = (section) => {
+
+            const sectionType = String(
+                section.type ?? ''
+            ).trim().toLowerCase();
+
+            // Reference the correct figure or boring.
+            const referenceid =
+                section.referenceid || (
+                    sectionType === 'figure'
+                        ? section.figureid
+                        : sectionType === 'boringlog'
+                            ? section.boringid
+                            : ''
+                );
+
+            let xml = '<section>';
+
+            xml += tag('sectionid', section.sectionid);
+            xml += tag('title', section.section);
+            xml += tag('type', section.type);
+            xml += tag('content', section.content);
+            xml += tag('referenceid', referenceid);
+
+            xml += '<subsections>';
+
+            for (const subsection of section.subsections || []) {
+                xml += buildSectionXML(subsection);
+            }
+
+            xml += '</subsections>';
+            xml += '</section>';
+
+            return xml;
+        };
+
+        // ============================================
+        // BUILD BORING XML
+        // ============================================
+
+        const buildBoringXML = async (boring) => {
+
+            let xml = '<boring>';
+
+            const boringFields = [
+                'boringid',
+                'boringnumber',
+                'datedrilled',
+                'loggedby',
+                'drillrig',
+                'elevation',
+                'diameter',
+                'gwdepth',
+                'latitude',
+                'longitude'
+            ];
+
+            for (const field of boringFields) {
+                xml += tag(field, boring[field]);
+            }
+
+            xml += '<samples>';
+
+            for (const sample of boring.samples || []) {
+
+                const key = sample.graphiclog || '';
+
+                const httpUrl =
+                    `${publicBaseUrl}/gfk/graphiclog/` +
+                    `${encodeURIComponent(projectid)}/` +
+                    `${encodeURIComponent(boring.boringid)}/` +
+                    `${encodeURIComponent(sample.sampleid)}`;
+
+                const imageUrl = await resolveImageUrl(
+                    key,
+                    httpUrl
+                );
+
+                xml += '<sample>';
+
+                const sampleFields = [
+                    'sampleid',
+                    'samplenumber',
+                    'sampleset',
+                    'depth',
+                    'description',
+                    'spt',
+                    'uscs',
+                    'graphiclog'
+                ];
+
+                for (const field of sampleFields) {
+                    xml += tag(field, sample[field]);
+                }
+
+                // HTTP URL for Oxygen,
+                // local file URL for Apache FOP.
+                xml += tag('imageurl', imageUrl);
+
+                xml += '</sample>';
+            }
+
+            xml += '</samples>';
+            xml += '</boring>';
+
+            return xml;
+        };
+
+        // ============================================
+        // BUILD FIGURE XML
+        // ============================================
+
+        const buildFigureXML = async (figure) => {
+
+            const key = figure.figureurl || '';
+
+            const httpUrl =
+                `${publicBaseUrl}/gfk/` +
+                `${encodeURIComponent(projectid)}/figures/` +
+                `${encodeURIComponent(figure.figureid)}/image`;
+
+            const imageUrl = await resolveImageUrl(
+                key,
+                httpUrl
+            );
+
+            let xml = '<figure>';
+
+            xml += tag('figureid', figure.figureid);
+            xml += tag('figuretitle', figure.figuretitle);
+            xml += tag('figureurl', figure.figureurl);
+            xml += tag('figurecaption', figure.figurecaption);
+
+            xml += tag(
+                'orientation',
+                figure.orientation || 'portrait'
+            );
+
+            xml += tag('imageurl', imageUrl);
+
+            xml += '</figure>';
+
+            return xml;
+        };
+
+        // ============================================
+        // BUILD LAB SUMMARY XML
+        // ============================================
+
+        const buildLabSummaryXML = (summary) => {
+
+            let xml = '<labsummary>';
+
+            // ------------------------------------
+            // PROJECT INFORMATION
+            // ------------------------------------
+
+            xml += tag(
+                'projectid',
+                summary?.projectid ?? projectid
+            );
+
+            xml += tag(
+                'projectnumber',
+                summary?.projectnumber ??
+                    project.projectnumber
+            );
+
+            xml += tag(
+                'reporttitle',
+                summary?.reporttitle ??
+                    'SUMMARY OF LABORATORY TEST RESULTS'
+            );
+
+            xml += tag(
+                'title',
+                summary?.title ?? project.title
+            );
+
+            xml += tag(
+                'projecttitle',
+                summary?.projecttitle ?? project.title
+            );
+
+            xml += tag(
+                'projectaddress',
+                summary?.projectaddress ??
+                    project.projectaddress
+            );
+
+            xml += tag(
+                'projectcity',
+                summary?.projectcity ?? project.projectcity
+            );
+
+            xml += tag('datereport', reportDate);
+
+            // ------------------------------------
+            // LABORATORY TEST RESULTS
+            // ------------------------------------
+
+            const samples = Array.isArray(summary?.samples)
+                ? summary.samples
+                : [];
+
+            const sampleFields = [
+                'boringid',
+                'sampleid',
+                'sampleno',
+                'depth',
+                'dryden',
+                'moist',
+                'll',
+                'pi',
+                'un',
+                'strain',
+                'sieve'
+            ];
+
+            for (const sample of samples) {
+
+                xml += '<sample>';
+
+                for (const field of sampleFields) {
+                    xml += tag(field, sample[field]);
+                }
+
+                xml += '</sample>';
+            }
+
+            xml += '</labsummary>';
+
+            return xml;
+        };
+
+        // ============================================
+        // BUILD COMPLETE REPORT XML
+        // ============================================
+
+        let xml = '<?xml version="1.0" encoding="UTF-8"?>';
+
+        xml += '<report>';
+
+        // ------------------------------------
+        // REPORT / PROJECT INFORMATION
+        // ------------------------------------
+
+        xml += tag('reportid', report.reportid);
+        xml += tag('projectid', projectid);
+        xml += tag('projectnumber', project.projectnumber);
+        xml += tag('projectaddress', project.projectaddress);
+        xml += tag('projectcity', project.projectcity);
+        xml += tag('projecttitle', project.title);
+        xml += tag('reporttitle', report.reporttitle);
+        xml += tag('client', client);
+        xml += tag('type', report.type);
+        xml += tag('datereport', reportDate);
+        xml += tag('author', report.author);
+
+        // ------------------------------------
+        // REPORT SECTIONS
+        // ------------------------------------
+
+        xml += '<sections>';
+
+        for (const section of report.sections || []) {
+            xml += buildSectionXML(section);
+        }
+
+        xml += '</sections>';
+
+        // ------------------------------------
+        // PROJECT BORINGS
+        // ------------------------------------
+
+        xml += '<borings>';
+
+        for (const boring of borings) {
+            xml += await buildBoringXML(boring);
+        }
+
+        xml += '</borings>';
+
+        // ------------------------------------
+        // PROJECT FIGURES
+        // ------------------------------------
+
+        xml += '<figures>';
+
+        for (const figure of figures) {
+            xml += await buildFigureXML(figure);
+        }
+
+        xml += '</figures>';
+
+        // ------------------------------------
+        // LABORATORY SUMMARY
+        // ------------------------------------
+
+        // Uses existing loaded borings.
+        // No additional MongoDB query.
+
+        xml += buildLabSummaryXML(labsummary);
+
+        // ------------------------------------
+        // CLOSE REPORT
+        // ------------------------------------
+
+        xml += '</report>';
+
+        // ============================================
+        // OXYGEN XML DEVELOPER (DEFAULT)
+        // ============================================
+
+        if (!isFOP) {
+
+            return res.status(200)
+                .type('application/xml; charset=utf-8')
+                .send(xml);
+        }
+
+        // ============================================
+        // APACHE FOP (INTERNAL PDF)
+        // ============================================
+
+        // Keep temporary images until the response
+        // finishes. streamFOP should expose its FOP
+        // child-process completion for robust cleanup
+        // if the client disconnects early.
+
+        res.once('finish', () => {
+            void cleanup();
+        });
+
+        res.once('close', () => {
+            void cleanup();
+        });
+
+        const filename =
+            `GFK-Report-${project.projectnumber}.pdf`;
+
+        return streamFOP(
+            xml,
+            'xsl/gfkreport.xsl',
+            res,
+            filename,
+            'pdf'
+        );
+
+    } catch (error) {
+
+        console.error(
+            'GFK report generation error:',
+            error
+        );
+
+        await cleanup();
+
+        if (!res.headersSent) {
+
+            return res.status(500).json({
+                Error: `Could not generate report: ${error.message}`
+            });
+        }
+
+        res.destroy(error);
+    }
+});
+
+
+
+
+
+ 
+app.get('/gfk/xml/:projectid/labsummary', async (req, res) => {
+
+    // ============================================
+    // OUTPUT MODE
+    // ============================================
+
+    const outputMode = 'xml'; // Oxygen Developer
+    // Change 'xml' to 'pdf' for Apache FOP
+
+    try {
+
+        const gfk = new GFK();
+        const unconfinedcalcs = new UnconfinedCalcs();
+
+        const { projectid } = req.params;
+
+        // ============================================
+        // LOAD PROJECT AND BORINGS
+        // ============================================
+
+        const [project, borings] = await Promise.all([
+            gfk.getProjectById(projectid),
+            gfk.loadBorings(projectid)
+        ]);
+
+        if (!project) {
+            return res.status(404).json({
+                message: 'Project not found'
+            });
+        }
+
+        // ============================================
+        // XML HELPERS
+        // ============================================
+
+        const escapeXML = (value) => {
+            return String(value ?? '')
+                .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&apos;');
+        };
+
+        const xmlTag = (name, value) => {
+            return `<${name}>${escapeXML(value)}</${name}>`;
+        };
+
+        // Avoid printing NaN or Infinity in XML.
+        const validNumber = (value, decimals = null) => {
+
+            if (value === null || value === undefined || value === '') {
+                return '';
+            }
+
+            const number = Number(value);
+
+            if (!Number.isFinite(number)) {
+                return '';
+            }
+
+            return decimals === null
+                ? number
+                : number.toFixed(decimals);
+        };
+
+        // ============================================
+        // REPORT INFORMATION
+        // ============================================
+
+        const reportDate = new Date().toLocaleDateString(
+            'en-US',
+            {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                timeZone: 'America/Los_Angeles'
+            }
+        );
+
+        let xml = '<?xml version="1.0" encoding="UTF-8"?>';
+
+        xml += '<labsummary>';
+
+        xml += xmlTag('projectid', projectid);
+        xml += xmlTag('projectnumber', project.projectnumber);
+        xml += xmlTag('reporttitle', 'Laboratory Test Summary');
+        xml += xmlTag('title', project.title);
+        xml += xmlTag('projecttitle', project.title);
+        xml += xmlTag('projectaddress', project.projectaddress);
+        xml += xmlTag('projectcity', project.projectcity);
+        xml += xmlTag('datereport', reportDate);
+
+        // ============================================
+        // PROCESS BORINGS AND SAMPLES
+        // ============================================
+
+        if (Array.isArray(borings)) {
+
+            for (const boring of borings) {
+
+                if (!Array.isArray(boring.samples)) {
+                    continue;
+                }
+
+                for (const sample of boring.samples) {
+
+                    // --------------------------------
+                    // SAMPLE NUMBER AND DEPTH
+                    // --------------------------------
+
+                    const sampleno =
+                        `${boring.boringnumber ?? ''}-` +
+                        `${sample.sampleset ?? ''}` +
+                        `(${sample.samplenumber ?? ''})`;
+
+                    const depth = sample.depth;
+
+                    // --------------------------------
+                    // DRY DENSITY
+                    // --------------------------------
+
+                    const dryden = calcdryden(
+                        sample.wetwgt_2,
+                        sample.wetwgt,
+                        sample.tarewgt,
+                        sample.drywgt,
+                        sample.diameter,
+                        sample.samplelength
+                    );
+
+                    // --------------------------------
+                    // MOISTURE CONTENT
+                    // --------------------------------
+
+                    const moistureResult = calcmoist(
+                        sample.drywgt,
+                        sample.tarewgt,
+                        sample.wetwgt,
+                        sample.wetwgt_2
+                    );
+
+                    const moist = validNumber(
+                        Number(moistureResult) * 100,
+                        1
+                    );
+
+                    // --------------------------------
+                    // ATTERBERG LIMITS
+                    // --------------------------------
+
+                    const ll = Number(sample.ll) > 0
+                        ? Number(sample.ll)
+                        : '';
+
+                    const pi = Number(sample.pi) > 0
+                        ? Number(sample.pi)
+                        : '';
+
+                    // --------------------------------
+                    // UNCONFINED COMPRESSION
+                    // --------------------------------
+
+                    const calculatedStress =
+                        unconfinedcalcs.getMaxStress(sample);
+
+                    const calculatedStrain =
+                        unconfinedcalcs.getMaxStrain(sample);
+
+                    const maxstress =
+                        Number(calculatedStress) > 0
+                            ? calculatedStress
+                            : '';
+
+                    const maxstrain =
+                        Number(calculatedStrain) > 0
+                            ? calculatedStrain
+                            : '';
+
+                    // --------------------------------
+                    // SIEVE ANALYSIS
+                    // --------------------------------
+
+                    let sieveresult = '';
+
+                    const sieve = sample.sieve;
+
+                    if (sieve) {
+
+                        const netwgt =
+                            Number(sample.drywgt) -
+                            Number(sample.tarewgt);
+
+                        const SC = new SoilClassification(
+                            netwgt,
+                            ll,
+                            pi,
+                            Number(sieve.wgt34),
+                            Number(sieve.wgt38),
+                            Number(sieve.wgt4),
+                            Number(sieve.wgt10),
+                            Number(sieve.wgt30),
+                            Number(sieve.wgt40),
+                            Number(sieve.wgt100),
+                            Number(sieve.wgt200)
+                        );
+
+                        const gravelfrac = Number(SC.getGravFrac());
+                        const sandfrac = Number(SC.getSandFrac());
+                        const fines = Number(SC.getFines());
+
+                        const sieveParts = [];
+
+                        if (Number.isFinite(gravelfrac) && gravelfrac > 0) {
+                            sieveParts.push(`Gravel ${gravelfrac}%`);
+                        }
+
+                        if (Number.isFinite(sandfrac) && sandfrac > 0) {
+                            sieveParts.push(`Sand ${sandfrac}%`);
+                        }
+
+                        if (Number.isFinite(fines) && fines > 0) {
+                            sieveParts.push(`Fines ${fines}%`);
+                        }
+
+                        sieveresult = sieveParts.join(', ');
+                    }
+
+                    // --------------------------------
+                    // BUILD SAMPLE XML
+                    // --------------------------------
+
+                    xml += '<sample>';
+
+                    xml += xmlTag('sampleno', sampleno);
+                    xml += xmlTag('depth', depth);
+                    xml += xmlTag('dryden', validNumber(dryden));
+                    xml += xmlTag('moist', moist);
+                    xml += xmlTag('ll', ll);
+                    xml += xmlTag('pi', pi);
+                    xml += xmlTag('un', validNumber(maxstress));
+                    xml += xmlTag('strain', validNumber(maxstrain));
+                    xml += xmlTag('sieve', sieveresult);
+
+                    xml += '</sample>';
+                }
+            }
+        }
+
+        xml += '</labsummary>';
+
+        // ============================================
+        // OXYGEN XML DEVELOPER - DEFAULT
+        // ============================================
+
+        if (outputMode === 'xml') {
+
+            return res.status(200)
+                .type('application/xml; charset=utf-8')
+                .send(xml);
+        }
+
+        // ============================================
+        // APACHE FOP - INTERNAL PDF
+        // ============================================
+
+        if (outputMode === 'pdf') {
+
+            const filename =
+                `labsummary-${project.projectnumber}.pdf`;
+
+            return streamFOP(
+                xml,
+                'xsl/labsummary.xsl',
+                res,
+                filename,
+                'pdf'
+            );
+        }
+
+        return res.status(400).json({
+            message: `Invalid output mode: ${outputMode}`
+        });
 
     } catch (err) {
-      console.error(err);
-      res.send({ message: `Error: Could not load summary ${err}` });
+
+        console.error('Lab Summary XML Error:', err);
+
+        if (!res.headersSent) {
+            return res.status(500).json({
+                message: `Could not load lab summary: ${err.message}`
+            });
+        }
+
+        res.destroy(err);
     }
-  });
+});
+
 
   app.get("/gfk/xml/:projectid/proposal/:proposalid", async (req, res) => {
 
