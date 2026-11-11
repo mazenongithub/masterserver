@@ -21,7 +21,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import SDC from '../classes/sdc.js';
 import Figures from '../classes/figures.js';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { pipeline } from 'node:stream/promises';
+import { createWriteStream } from 'node:fs';
+import CompactionTables from '../classes/compactiontables.js';
 
 
 
@@ -127,6 +129,65 @@ export default (app) => {
 
 
   })
+
+  app.get('/gfk/:projectid/compactiontables', 
+    async (req, res) => {
+
+        try {
+
+            const { projectid } = req.params;
+
+            const tables = new CompactionTables();
+
+            const result = await tables.loadCompactionTables(
+                projectid
+            );
+
+            return res.status(200).json(result);
+
+        } catch (err) {
+
+            console.error(err);
+
+            return res.status(500).json({
+                success: false,
+                Error: 'Could not load compaction tables.'
+            });
+        }
+    }
+);
+
+// ============================================
+// SAVE COMPACTION TABLES
+// ============================================
+
+app.post('/gfk/:projectid/compactiontables', async (req, res) => {
+
+        try {
+
+            const { projectid } = req.params;
+            const { tables } = req.body;
+
+            const handler = new CompactionTables();
+
+            const result = await handler.saveCompactionTables(
+                projectid,
+                tables
+            );
+
+            return res.status(200).json(result);
+
+        } catch (err) {
+
+            console.error(err);
+
+            return res.status(500).json({
+                success: false,
+                Error: 'Could not save compaction tables.'
+            });
+        }
+    }
+);
 
 
   app.post('/gfk/savecontactus', rateLimiter, async (req, res) => {
@@ -1289,6 +1350,7 @@ export default (app) => {
       const gfk = new GFK();
       const sdcHandler = new SDC();
       const figureHandler = new Figures();
+      const compactionTablesHandler = new CompactionTables();
 
       const [
         borings,
@@ -1301,7 +1363,8 @@ export default (app) => {
         schedule,
         reports,
         sdc,
-        figures
+        figures,
+        compactionTableData
       ] = await Promise.all([
         gfk.loadBorings(projectid),
         gfk.loadFieldReports(projectid),
@@ -1313,7 +1376,8 @@ export default (app) => {
         gfk.loadSchedule(projectid),
         gfk.loadReports(projectid),
         sdcHandler.loadSeismicDesignCriteria(projectid),
-        figureHandler.loadProjectFigures(projectid)
+        figureHandler.loadProjectFigures(projectid),
+        compactionTablesHandler.loadCompactionTables(projectid)
       ]);
 
       const projectData = {
@@ -1327,7 +1391,8 @@ export default (app) => {
         schedule: schedule ?? [],
         reports: reports ?? [],
         SDC: sdc ?? null,
-        figures: figures ?? []
+        figures: figures ?? [],
+        tables: compactionTableData.tables ?? []
       };
 
       const hasData = Object.values(projectData).some(value =>
@@ -1699,19 +1764,784 @@ export default (app) => {
   // Assuming you have a MongoDB `db` instance ready
   // e.g., const db = client.db("yourDb");
 
- 
+
+
+
+app.get('/gfk/xml/:projectid/reportletter/:reportid', async (req, res) => {
+
+    const OUTPUT_FORMAT = 'xml'; // Change to 'pdf' for Apache FOP
+    const gfk = new GFK();
+
+    // ============================================
+    // HELPERS
+    // ============================================
+
+    const list = value => Array.isArray(value) ? value : [];
+
+    const first = (...values) =>
+        values.find(v => v !== undefined && v !== null && v !== '') ?? '';
+
+    const escapeXML = value => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+
+    const element = (name, value) =>
+        `<${name}>${escapeXML(value)}</${name}>`;
+
+    const normalizeType = value =>
+        String(value ?? '')
+            .toLowerCase()
+            .replace(/[\s_-]+/g, '');
+
+    const isCompactionTable = type => [
+        'compactiontable',
+        'compactiontables',
+        'compactiontests',
+        'compaction'
+    ].includes(type);
+
+    const formatDate = value => {
+        if (!value) return '';
+
+        const date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) {
+            return String(value);
+        }
+
+        return new Intl.DateTimeFormat('en-US', {
+            timeZone: 'UTC',
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric'
+        }).format(date);
+    };
+
+    const numeric = value =>
+        value !== undefined &&
+        value !== null &&
+        value !== '' &&
+        Number.isFinite(Number(value))
+            ? Number(value)
+            : null;
+
+    const money = value =>
+        Math.round((value + Number.EPSILON) * 100) / 100;
+
+    // ============================================
+    // DYNAMIC OBJECT TO XML
+    // Used for compaction curves
+    // ============================================
+
+    const objectFieldsXML = value => {
+
+        if (!value || typeof value !== 'object') {
+            return '';
+        }
+
+        const obj = typeof value.toObject === 'function'
+            ? value.toObject()
+            : value;
+
+        return Object.entries(obj).map(([name, v]) => {
+
+            if (
+                !/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(name) ||
+                /^xml/i.test(name) ||
+                name === '__v'
+            ) {
+                return '';
+            }
+
+            if (v === undefined || v === null) {
+                return element(name, '');
+            }
+
+            if (v instanceof Date) {
+                return element(name, v.toISOString());
+            }
+
+            if (typeof v?.toHexString === 'function') {
+                return element(name, v.toHexString());
+            }
+
+            if (Array.isArray(v)) {
+
+                return `<${name}>${v.map(item => {
+
+                    if (
+                        item &&
+                        typeof item === 'object' &&
+                        !(item instanceof Date) &&
+                        typeof item.toHexString !== 'function'
+                    ) {
+                        return `<item>${objectFieldsXML(item)}</item>`;
+                    }
+
+                    const output = item instanceof Date
+                        ? item.toISOString()
+                        : typeof item?.toHexString === 'function'
+                            ? item.toHexString()
+                            : item;
+
+                    return element('item', output);
+
+                }).join('')}</${name}>`;
+            }
+
+            if (typeof v === 'object') {
+                return `<${name}>${objectFieldsXML(v)}</${name}>`;
+            }
+
+            return element(name, v);
+
+        }).join('');
+    };
+
+    // ============================================
+    // COMPACTION TEST XML
+    // ============================================
+
+    const testXML = test => `
+        <test>
+            ${element('testid', first(
+                test.testid,
+                test.compactiontestid,
+                test.id
+            ))}
+
+            ${element('testnumber', first(
+                test.testnumber,
+                test.testno
+            ))}
+
+            ${element('location', first(
+                test.location,
+                test.testlocation
+            ))}
+
+            ${element('testdate', formatDate(first(
+                test.testdate,
+                test.date
+            )))}
+
+            ${element('drydensity', first(
+                test.drydensity,
+                test.fielddrydensity
+            ))}
+
+            ${element('moisture', first(
+                test.moisture,
+                test.moisturecontent
+            ))}
+
+            ${element('relativecompaction', test.relativecompaction)}
+
+            ${element('requirement', first(
+                test.requirement,
+                test.criteria
+            ))}
+
+            ${element('result', test.result)}
+
+            ${element('curveid', first(
+                test.curveid,
+                test.compactioncurveid
+            ))}
+        </test>
+    `;
+
+    // ============================================
+    // GENERATE COST ESTIMATE XML
+    // One proposal per section
+    // ============================================
+
+    const costEstimateXML = proposal => {
+
+        const items = [];
+
+        // Resolve labor line items
+        for (const labor of list(proposal.laboritems)) {
+
+            const hours =
+                (new Date(labor.timeout) - new Date(labor.timein))
+                / 3600000;
+
+            const rate = numeric(labor.laborrate);
+
+            const validHours =
+                Number.isFinite(hours) &&
+                hours >= 0;
+
+            items.push({
+                description: labor.description,
+                quantity: validHours ? hours : '',
+                unit: 'hr',
+                unitprice: rate ?? '',
+                amount: validHours && rate !== null
+                    ? money(hours * rate)
+                    : ''
+            });
+        }
+
+        // Resolve cost line items
+        for (const cost of list(proposal.costitems)) {
+
+            const quantity = numeric(cost.quantity ?? 1);
+            const unitprice = numeric(cost.unitcost);
+
+            items.push({
+                description: cost.description,
+                quantity: quantity ?? '',
+                unit: cost.unit || 'each',
+                unitprice: unitprice ?? '',
+                amount: quantity !== null && unitprice !== null
+                    ? money(quantity * unitprice)
+                    : ''
+            });
+        }
+
+        const calculatedTotal = items.every(
+            item => numeric(item.amount) !== null
+        )
+            ? money(items.reduce(
+                (sum, item) => sum + Number(item.amount), 0
+            ))
+            : '';
+
+        const total = first(
+            proposal.total,
+            calculatedTotal
+        );
+
+        const itemsXML = items.map((item, index) => `
+            <item>
+                ${element('itemnumber', index + 1)}
+                ${element('description', item.description)}
+                ${element('quantity', item.quantity)}
+                ${element('unit', item.unit)}
+                ${element('unitprice', item.unitprice)}
+                ${element('amount', item.amount)}
+            </item>
+        `).join('');
+
+        return `
+            <costestimate>
+                ${element('proposalid', proposal.proposalid)}
+                ${element('proposalnumber', proposal.proposalnumber)}
+                ${element('dateproposal', formatDate(proposal.dateproposal))}
+                ${element('status', proposal.status)}
+
+                <items>
+                    ${itemsXML}
+                </items>
+
+                ${element('total', total)}
+            </costestimate>
+        `;
+    };
+
+    try {
+
+        const { projectid, reportid } = req.params;
+
+        // ============================================
+        // LOAD PROJECT
+        // ============================================
+
+        const project = await gfk.getProjectById(projectid);
+
+        if (!project) {
+            return res.status(404).json({
+                Error: 'Project not found.'
+            });
+        }
+
+        // Apply your existing project-level access
+        // authorization here.
+
+        // ============================================
+        // LOAD CLIENT AND REPORT
+        // ============================================
+
+        const [client, report] = await Promise.all([
+
+            gfk.findClientByID(project.clientid),
+
+            gfk.getReportByID(projectid, reportid)
+
+        ]);
+
+        if (!client) {
+            return res.status(404).json({
+                Error: 'Client not found.'
+            });
+        }
+
+        if (!report) {
+            return res.status(404).json({
+                Error: 'Report not found.'
+            });
+        }
+
+        // ============================================
+        // RECURSIVE SPECIAL SECTION DETECTION
+        // ============================================
+
+        const proposalIDs = new Set();
+        const tableIDs = new Set();
+        const missingReferences = [];
+
+        const scanSections = sections => {
+
+            for (const section of list(sections)) {
+
+                if (!section || typeof section !== 'object') {
+                    continue;
+                }
+
+                const type = normalizeType(section.type);
+
+                const id = String(
+                    section.referenceid ?? ''
+                ).trim();
+
+                if (
+                    type === 'costestimate' ||
+                    isCompactionTable(type)
+                ) {
+
+                    if (!id) {
+
+                        missingReferences.push({
+                            sectionid: section.sectionid,
+                            type: section.type
+                        });
+
+                    } else if (type === 'costestimate') {
+
+                        proposalIDs.add(id);
+
+                    } else {
+
+                        tableIDs.add(id);
+                    }
+                }
+
+                // Check every nested section
+                scanSections(section.subsections);
+            }
+        };
+
+        scanSections(report.sections);
+
+        if (missingReferences.length) {
+
+            return res.status(422).json({
+                Error: 'Special sections require a referenceid.',
+                missingReferences
+            });
+        }
+
+        // ============================================
+        // LOAD ONLY REQUIRED DATABASE RECORDS
+        // ============================================
+
+        const [
+            proposals,
+            tables,
+            fieldreports,
+            compactionCurves
+        ] = await Promise.all([
+
+            // Proposals referenced by sections
+            Promise.all(
+                [...proposalIDs].map(id =>
+                    gfk.findProposalByID(projectid, id)
+                )
+            ),
+
+            // Compaction tables referenced by sections
+            Promise.all(
+                [...tableIDs].map(id =>
+                    gfk.findCompactionTableByID(projectid, id)
+                )
+            ),
+
+            // Only load field reports when needed
+            tableIDs.size
+                ? gfk.loadFieldReports(projectid)
+                : Promise.resolve([]),
+
+            // Only load compaction curves when needed
+            tableIDs.size
+                ? gfk.loadCompactionCurves(projectid)
+                : Promise.resolve([])
+
+        ]);
+
+        // ============================================
+        // CREATE DATA LOOKUP MAPS
+        // ============================================
+
+        const proposalMap = new Map(
+            proposals
+                .filter(Boolean)
+                .map(proposal => [
+                    String(proposal.proposalid),
+                    proposal
+                ])
+        );
+
+        const tableMap = new Map(
+            tables
+                .filter(Boolean)
+                .map(table => [
+                    String(table.tableid),
+                    table
+                ])
+        );
+
+        // ============================================
+        // VALIDATE REFERENCED RECORDS
+        // ============================================
+
+        const missingProposals = [...proposalIDs].filter(
+            id => !proposalMap.has(id)
+        );
+
+        const missingTables = [...tableIDs].filter(
+            id => !tableMap.has(id)
+        );
+
+        if (missingProposals.length || missingTables.length) {
+
+            return res.status(422).json({
+                Error: 'Referenced proposal or compaction table not found.',
+                missingProposals,
+                missingTables
+            });
+        }
+
+        // ============================================
+        // INDEX COMPACTION TESTS FROM FIELD REPORTS
+        // ============================================
+
+        const testsByID = new Map();
+
+        for (const fieldreport of list(fieldreports)) {
+
+            for (const test of list(fieldreport.compactiontests)) {
+
+                const id = String(first(
+                    test.testid,
+                    test.compactiontestid,
+                    test.id
+                )).trim();
+
+                if (id && !testsByID.has(id)) {
+                    testsByID.set(id, test);
+                }
+            }
+        }
+
+        // ============================================
+        // RESOLVE COMPACTION TABLE TESTS
+        // ============================================
+
+        const resolvedTableMap = new Map();
+        const incompleteTables = [];
+
+        for (const table of tables.filter(Boolean)) {
+
+            const selectedIDs = list(table.compactiontests)
+                .map(id => String(id).trim())
+                .filter(Boolean);
+
+            const missingTestIDs = selectedIDs.filter(
+                id => !testsByID.has(id)
+            );
+
+            if (missingTestIDs.length) {
+
+                incompleteTables.push({
+                    tableid: table.tableid,
+                    missingTestIDs
+                });
+            }
+
+            // Preserve the saved order of selected tests
+            const tests = selectedIDs
+                .filter(id => testsByID.has(id))
+                .map(id => testsByID.get(id));
+
+            resolvedTableMap.set(
+                String(table.tableid),
+                {
+                    table,
+                    tests
+                }
+            );
+        }
+
+        if (incompleteTables.length) {
+
+            return res.status(422).json({
+                Error: 'Some selected compaction tests were not found in project field reports.',
+                incompleteTables
+            });
+        }
+
+        // ============================================
+        // GENERATE COMPACTION TABLE XML
+        // One compaction table per section
+        // ============================================
+
+        const compactionTableXML = ({ table, tests }) => {
+
+            const testsXML = tests
+                .map(testXML)
+                .join('');
+
+            const curvesXML = list(compactionCurves)
+                .map(curve => `
+                    <curve>
+                        ${objectFieldsXML(curve)}
+                    </curve>
+                `)
+                .join('');
+
+            return `
+                <compactiontable>
+
+                    ${element('tableid', table.tableid)}
+
+                    ${element('tabletitle', table.tabletitle)}
+
+                    <compactiontests>
+                        ${testsXML}
+                    </compactiontests>
+
+                    <compactioncurves>
+                        ${curvesXML}
+                    </compactioncurves>
+
+                </compactiontable>
+            `;
+        };
+
+        // ============================================
+        // RECURSIVE SECTION XML
+        // EMBED SPECIAL DATA INTO EACH SECTION
+        // ============================================
+
+        const sectionXML = section => {
+
+            const type = normalizeType(section.type);
+
+            const referenceid = String(
+                section.referenceid ?? ''
+            ).trim();
+
+            let specialXML = '';
+
+            switch (type) {
+
+                case 'costestimate': {
+
+                    const proposal = proposalMap.get(referenceid);
+
+                    specialXML = costEstimateXML(proposal);
+
+                    break;
+                }
+
+                case 'compactiontable':
+                case 'compactiontables':
+                case 'compactiontests':
+                case 'compaction': {
+
+                    const table = resolvedTableMap.get(referenceid);
+
+                    specialXML = compactionTableXML(table);
+
+                    break;
+                }
+
+                default:
+                    break;
+            }
+
+            return `
+                <section>
+
+                    ${element('sectionid', section.sectionid)}
+
+                    ${element('section', first(
+                        section.section,
+                        section.title
+                    ))}
+
+                    ${element('type', section.type)}
+
+                    ${element('content', section.content)}
+
+                    ${element('referenceid', section.referenceid)}
+
+                    ${specialXML}
+
+                    <subsections>
+                        ${list(section.subsections).map(sectionXML).join('')}
+                    </subsections>
+
+                </section>
+            `;
+        };
+
+        // ============================================
+        // CLIENT INFORMATION
+        // ============================================
+
+        const clientName = first(
+            client.companyname,
+            client.clientname,
+            `${client.firstname ?? ''} ${client.lastname ?? ''}`.trim(),
+            client.name,
+            client.company
+        );
+
+        // ============================================
+        // COMPANY LOGO
+        // ============================================
+
+        const logoURI = OUTPUT_FORMAT === 'pdf'
+            ? (process.env.GFK_LOGO_FILE_URI || '')
+            : (process.env.GFK_LOGO_PUBLIC_URL || '');
+
+        // ============================================
+        // GENERATE REPORT XML
+        // ============================================
+
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>
+
+<report>
+
+    ${element('reportid', first(report.reportid, reportid))}
+
+    ${element('projectid', projectid)}
+
+    ${element('reporttitle', report.reporttitle)}
+
+    ${element('datereport', formatDate(report.datereport))}
+
+    ${element('projectnumber', project.projectnumber)}
+
+    ${element('projecttitle', first(
+        project.projecttitle,
+        project.title
+    ))}
+
+    ${element('projectaddress', first(
+        project.projectaddress,
+        project.address
+    ))}
+
+    ${element('projectcity', first(
+        project.projectcity,
+        project.city
+    ))}
+
+    ${element('client', clientName)}
+
+    ${element('clientaddress', first(
+        client.address,
+        client.streetaddress
+    ))}
+
+    ${element('clientcity',
+        [client.city, client.state].filter(Boolean).join(', ') +
+        (client.zip ? ' ' + client.zip : '')
+    )}
+
+    ${element('attention', report.attention)}
+
+    ${element('companylogo', logoURI)}
+
+    ${element('companyinfo',
+        process.env.GFK_COMPANY_INFO || ''
+    )}
+
+    <sections>
+        ${list(report.sections).map(sectionXML).join('')}
+    </sections>
+
+</report>`;
+
+        // ============================================
+        // OXYGEN XML MODE
+        // ============================================
+
+        if (OUTPUT_FORMAT === 'xml') {
+
+            res.set(
+                'Content-Type',
+                'application/xml; charset=utf-8'
+            );
+
+            return res.status(200).send(xml);
+        }
+
+        // ============================================
+        // APACHE FOP PDF MODE
+        // ============================================
+
+        const xslPath = path.join(
+            process.cwd(),
+            'xsl',
+            'gfk-letter-report-v4.xsl'
+        );
+
+        return streamFOP(
+            xml,
+            xslPath,
+            res,
+            `GFK-Letter-${reportid}.pdf`,
+            'pdf'
+        );
+
+    } catch (err) {
+
+        console.error(
+            'Could not retrieve report letter:',
+            err
+        );
+
+        if (!res.headersSent) {
+
+            return res.status(500).json({
+                Error: 'Could not retrieve report letter.'
+            });
+        }
+    }
+});
+
+
 
 
 app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
 
     const gfk = new GFK();
+    const sdcHandler = new SDC();
     const figureHandler = new Figures();
 
     // ============================================
     // OUTPUT MODE
     // ============================================
 
-    const outputMode = 'xml'; // Oxygen Developer
+    const outputMode = 'pdf'; // Oxygen Developer
     // Change 'xml' to 'pdf' for Apache FOP
 
     let tempDir = null;
@@ -1748,7 +2578,6 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
 
         const isFOP = outputMode === 'pdf';
 
-        // HTTP base URL accessible from Oxygen Developer.
         const publicBaseUrl = (
             process.env.GFK_PUBLIC_BASE_URL ||
             `${req.protocol}://${req.get('host')}`
@@ -1766,23 +2595,25 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
             });
         }
 
-        // Apply session and project-level authorization
-        // before exposing this route in production.
+        // Add session and project-level authorization
+        // before enabling this endpoint in production.
 
         // ============================================
-        // LOAD RELATED DATA
+        // LOAD REPORT DATA
         // ============================================
 
         const [
             report,
             loadedBorings,
             loadedFigures,
-            getclient
+            getclient,
+            sdc
         ] = await Promise.all([
             gfk.getReportByID(projectid, reportid),
             gfk.loadBorings(projectid),
             figureHandler.loadProjectFigures(projectid),
-            gfk.findClientByID(project.clientid)
+            gfk.findClientByID(project.clientid),
+            sdcHandler.loadSeismicDesignCriteria(projectid)
         ]);
 
         if (!report) {
@@ -1815,7 +2646,7 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
         // CALCULATE LABORATORY SUMMARY
         // ============================================
 
-        // Reuse the borings already loaded above.
+        // Uses existing borings.
         // No additional database queries.
 
         const labsummary = gfk.calculateLabSummary(
@@ -1878,7 +2709,7 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
                 );
             }
 
-            // Retrieve private image from Backblaze B2.
+            // Retrieve private image from Backblaze.
             const image = await getImage(key);
 
             if (!image?.Body) {
@@ -1921,7 +2752,7 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
                             : body
                     );
 
-            // Complete the download before FOP starts.
+            // Finish downloading before starting FOP.
             await pipeline(
                 source,
                 createWriteStream(destination)
@@ -1943,12 +2774,12 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
 
             if (!key) return '';
 
-            // Oxygen uses HTTP image URLs.
+            // Oxygen Developer uses HTTP URLs.
             if (!isFOP) {
                 return httpUrl;
             }
 
-            // Apache FOP uses file:/// URLs.
+            // Apache FOP uses local file:/// URLs.
             return await getLocalImageUrl(key);
         };
 
@@ -1962,7 +2793,6 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
                 section.type ?? ''
             ).trim().toLowerCase();
 
-            // Reference the correct figure or boring.
             const referenceid =
                 section.referenceid || (
                     sectionType === 'figure'
@@ -2051,8 +2881,6 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
                     xml += tag(field, sample[field]);
                 }
 
-                // HTTP URL for Oxygen,
-                // local file URL for Apache FOP.
                 xml += tag('imageurl', imageUrl);
 
                 xml += '</sample>';
@@ -2109,10 +2937,6 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
 
             let xml = '<labsummary>';
 
-            // ------------------------------------
-            // PROJECT INFORMATION
-            // ------------------------------------
-
             xml += tag(
                 'projectid',
                 summary?.projectid ?? projectid
@@ -2153,10 +2977,6 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
 
             xml += tag('datereport', reportDate);
 
-            // ------------------------------------
-            // LABORATORY TEST RESULTS
-            // ------------------------------------
-
             const samples = Array.isArray(summary?.samples)
                 ? summary.samples
                 : [];
@@ -2192,6 +3012,55 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
         };
 
         // ============================================
+        // BUILD SDC XML
+        // ============================================
+
+        const buildSDCXML = (criteria) => {
+
+            let xml = '<sdc>';
+
+            // Standard seismic design fields.
+            // Additional MySQL columns are also included.
+            const sdcFields = new Set([
+                'SS',
+                'S1',
+                'SiteClass',
+                'FA',
+                'FV',
+                'SMS',
+                'SM1',
+                'SDS',
+                'SD1',
+                ...Object.keys(criteria ?? {})
+            ]);
+
+            for (const field of sdcFields) {
+
+                // Only valid XML element names.
+                if (
+                    !/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(field) ||
+                    /^xml/i.test(field)
+                ) {
+                    continue;
+                }
+
+                const value = criteria?.[field];
+
+                // Handle MySQL date values.
+                const formattedValue =
+                    value instanceof Date
+                        ? value.toISOString()
+                        : value ?? '';
+
+                xml += tag(field, formattedValue);
+            }
+
+            xml += '</sdc>';
+
+            return xml;
+        };
+
+        // ============================================
         // BUILD COMPLETE REPORT XML
         // ============================================
 
@@ -2200,7 +3069,7 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
         xml += '<report>';
 
         // ------------------------------------
-        // REPORT / PROJECT INFORMATION
+        // PROJECT / REPORT INFORMATION
         // ------------------------------------
 
         xml += tag('reportid', report.reportid);
@@ -2215,9 +3084,18 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
         xml += tag('datereport', reportDate);
         xml += tag('author', report.author);
 
-        // ------------------------------------
+        // ============================================
+        // SEISMIC DESIGN CRITERIA
+        // ============================================
+
+        // Retrieved from MySQL.
+        // Located before report sections.
+
+        xml += buildSDCXML(sdc);
+
+        // ============================================
         // REPORT SECTIONS
-        // ------------------------------------
+        // ============================================
 
         xml += '<sections>';
 
@@ -2227,9 +3105,9 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
 
         xml += '</sections>';
 
-        // ------------------------------------
+        // ============================================
         // PROJECT BORINGS
-        // ------------------------------------
+        // ============================================
 
         xml += '<borings>';
 
@@ -2239,9 +3117,9 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
 
         xml += '</borings>';
 
-        // ------------------------------------
+        // ============================================
         // PROJECT FIGURES
-        // ------------------------------------
+        // ============================================
 
         xml += '<figures>';
 
@@ -2251,12 +3129,12 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
 
         xml += '</figures>';
 
-        // ------------------------------------
+        // ============================================
         // LABORATORY SUMMARY
-        // ------------------------------------
+        // ============================================
 
-        // Uses existing loaded borings.
-        // No additional MongoDB query.
+        // Calculated using existing borings.
+        // No additional database queries.
 
         xml += buildLabSummaryXML(labsummary);
 
@@ -2267,7 +3145,7 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
         xml += '</report>';
 
         // ============================================
-        // OXYGEN XML DEVELOPER (DEFAULT)
+        // OXYGEN XML DEVELOPER - DEFAULT
         // ============================================
 
         if (!isFOP) {
@@ -2278,13 +3156,15 @@ app.get('/gfk/xml/:projectid/report/:reportid', async (req, res) => {
         }
 
         // ============================================
-        // APACHE FOP (INTERNAL PDF)
+        // APACHE FOP - INTERNAL PDF
         // ============================================
 
-        // Keep temporary images until the response
-        // finishes. streamFOP should expose its FOP
-        // child-process completion for robust cleanup
-        // if the client disconnects early.
+        // Keep temporary image files until the
+        // PDF response finishes.
+
+        // For early client disconnects, cleanup
+        // should ideally be tied to the FOP
+        // child-process completion as well.
 
         res.once('finish', () => {
             void cleanup();

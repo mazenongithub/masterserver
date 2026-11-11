@@ -6,6 +6,7 @@ import { calcdryden, calcmoist } from '../functions/gfkfunctions.js';
 import SoilClassification from './soilclassification.js';
 
 
+
 const ProjectSchema = new mongoose.Schema({
     companyid: String,
     projects: [{
@@ -35,8 +36,8 @@ const sectionSchema = new mongoose.Schema({
         default: ''
     },
     type: {
-    type: String,
-    default: 'text'
+        type: String,
+        default: 'text'
     },
     referenceid: {
         type: String,
@@ -350,6 +351,28 @@ const TimesheetSchema = new mongoose.Schema({
     ]
 });
 
+
+const CompactionTableSchema = new mongoose.Schema({
+
+    projectid: {
+        type: String,
+        required: true,
+        unique: true
+    },
+
+    tables: [{
+        tableid: {
+            type: String,
+            required: true
+        },
+
+        tabletitle: String,
+
+        compactiontests: [String]
+    }]
+
+});
+
 const ScheduleSchema = new mongoose.Schema({
     projectid: {
         type: String,
@@ -466,10 +489,134 @@ const TimeSheets = mongoose.model("timesheets", TimesheetSchema)
 const Schedules = mongoose.model("schedules", ScheduleSchema)
 const GFKReports = mongoose.model("gfkreports", reportSchema)
 const GFKFigures = mongoose.model("gfkfigures", figureSchema)
-
+const CompactionTables = mongoose.model("compactiontables", CompactionTableSchema)
 
 
 class GFK {
+
+
+
+async findProposalByID(projectid, proposalid) {
+
+    try {
+
+        if (!projectid || !proposalid) {
+            return null;
+        }
+
+        // Find schedule containing the proposal
+        const schedule = await Schedules.findOne({
+            projectid,
+            'proposals.proposalid': proposalid
+        }).lean();
+
+        if (!schedule) {
+            return null;
+        }
+
+        // Find the specific proposal
+        const proposal = schedule.proposals.find(
+            p => p.proposalid === proposalid
+        );
+
+        if (!proposal) {
+            return null;
+        }
+
+        // Resolve referenced labor items
+        const laborIDs = new Set(proposal.labor || []);
+
+        const laboritems = (schedule.labor || []).filter(
+            item => laborIDs.has(item.laborid)
+        );
+
+        // Resolve referenced cost items
+        const costIDs = new Set(proposal.costs || []);
+
+        const costitems = (schedule.costs || []).filter(
+            item => costIDs.has(item.costid)
+        );
+
+        // Calculate labor total
+        const labortotal = laboritems.reduce((total, item) => {
+
+            const hours =
+                (new Date(item.timeout) - new Date(item.timein))
+                / (1000 * 60 * 60);
+
+            if (!Number.isFinite(hours) || hours < 0) {
+                return total;
+            }
+
+            return total + hours * Number(item.laborrate || 0);
+
+        }, 0);
+
+        // Calculate costs total
+        const costtotal = costitems.reduce((total, item) => {
+
+            return total +
+                Number(item.unitcost || 0) *
+                Number(item.quantity ?? 1);
+
+        }, 0);
+
+        return {
+            ...proposal,
+            projectid,
+            laboritems,
+            costitems,
+            labortotal,
+            costtotal,
+            total: labortotal + costtotal
+        };
+
+    } catch (err) {
+
+        console.error('Error finding proposal:', err);
+        throw err;
+    }
+}
+
+
+    
+async findCompactionTableByID(projectid, tableid) {
+
+    try {
+
+        if (!projectid || !tableid) {
+            return null;
+        }
+
+        const document = await CompactionTables.findOne(
+            {
+                projectid,
+                'tables.tableid': tableid
+            },
+            {
+                tables: {
+                    $elemMatch: { tableid }
+                }
+            }
+        ).lean();
+
+        if (!document?.tables?.length) {
+            return null;
+        }
+
+        return document.tables[0];
+
+    } catch (err) {
+
+        console.error(
+            'Error finding compaction table:',
+            err
+        );
+
+        throw err;
+    }
+}
+
 
 
 
@@ -1874,308 +2021,308 @@ class GFK {
         }
     }
 
-    
 
-calculateLabSummary(project, borings = []) {
 
-    const unconfinedcalcs = new UnconfinedCalcs();
+    calculateLabSummary(project, borings = []) {
 
-    const validNumber = (value, decimals = null) => {
+        const unconfinedcalcs = new UnconfinedCalcs();
 
-        if (value === null || value === undefined || value === '') {
-            return '';
-        }
+        const validNumber = (value, decimals = null) => {
 
-        const number = Number(value);
-
-        if (!Number.isFinite(number)) return '';
-
-        return decimals === null
-            ? number
-            : number.toFixed(decimals);
-    };
-
-    const samples = [];
-
-    for (const boring of borings) {
-
-        for (const sample of boring.samples || []) {
-
-            const sampleno =
-                `${boring.boringnumber ?? ''}-` +
-                `${sample.sampleset ?? ''}` +
-                `(${sample.samplenumber ?? ''})`;
-
-            // Dry density
-            const dryden = calcdryden(
-                sample.wetwgt_2,
-                sample.wetwgt,
-                sample.tarewgt,
-                sample.drywgt,
-                sample.diameter,
-                sample.samplelength
-            );
-
-            // Moisture content
-            const moisture = calcmoist(
-                sample.drywgt,
-                sample.tarewgt,
-                sample.wetwgt,
-                sample.wetwgt_2
-            );
-
-            const ll = Number(sample.ll) > 0
-                ? Number(sample.ll)
-                : '';
-
-            const pi = Number(sample.pi) > 0
-                ? Number(sample.pi)
-                : '';
-
-            // Unconfined compression
-            const stress = unconfinedcalcs.getMaxStress(sample);
-            const strain = unconfinedcalcs.getMaxStrain(sample);
-
-            // Sieve analysis
-            let sieveresult = '';
-
-            if (sample.sieve) {
-
-                const sieve = sample.sieve;
-
-                const netwgt =
-                    Number(sample.drywgt) -
-                    Number(sample.tarewgt);
-
-                const SC = new SoilClassification(
-                    netwgt,
-                    ll,
-                    pi,
-                    Number(sieve.wgt34),
-                    Number(sieve.wgt38),
-                    Number(sieve.wgt4),
-                    Number(sieve.wgt10),
-                    Number(sieve.wgt30),
-                    Number(sieve.wgt40),
-                    Number(sieve.wgt100),
-                    Number(sieve.wgt200)
-                );
-
-                const gravel = Number(SC.getGravFrac());
-                const sand = Number(SC.getSandFrac());
-                const fines = Number(SC.getFines());
-
-                const parts = [];
-
-                if (Number.isFinite(gravel) && gravel > 0) {
-                    parts.push(`Gravel ${gravel}%`);
-                }
-
-                if (Number.isFinite(sand) && sand > 0) {
-                    parts.push(`Sand ${sand}%`);
-                }
-
-                if (Number.isFinite(fines) && fines > 0) {
-                    parts.push(`Fines ${fines}%`);
-                }
-
-                sieveresult = parts.join(', ');
+            if (value === null || value === undefined || value === '') {
+                return '';
             }
 
-            samples.push({
-                boringid: boring.boringid,
-                sampleid: sample.sampleid,
-                sampleno,
-                depth: sample.depth ?? '',
-                dryden: validNumber(dryden),
-                moist: validNumber(moisture) === ''
-                    ? ''
-                    : validNumber(Number(moisture) * 100, 1),
-                ll,
-                pi,
-                un: Number(stress) > 0
-                    ? validNumber(stress)
-                    : '',
-                strain: Number(strain) > 0
-                    ? validNumber(strain)
-                    : '',
-                sieve: sieveresult
-            });
-        }
-    }
+            const number = Number(value);
 
-    return {
-        projectid: project.projectid,
-        projectnumber: project.projectnumber,
-        reporttitle: 'SUMMARY OF LABORATORY TEST RESULTS',
-        title: project.title,
-        projecttitle: project.title,
-        projectaddress: project.projectaddress,
-        projectcity: project.projectcity,
-        samples
-    };
-}
+            if (!Number.isFinite(number)) return '';
 
+            return decimals === null
+                ? number
+                : number.toFixed(decimals);
+        };
 
-async loadLabSummary(projectid, options = {}) {
+        const samples = [];
 
-    const gfk = new GFK();
-    const unconfinedcalcs = new UnconfinedCalcs();
+        for (const boring of borings) {
 
-    // Reuse project/borings if already loaded by
-    // the complete geotechnical report route.
-    const [project, borings] = await Promise.all([
-        options.project ?? gfk.getProjectById(projectid),
-        options.borings ?? gfk.loadBorings(projectid)
-    ]);
+            for (const sample of boring.samples || []) {
 
-    if (!project) {
-        throw new Error(`Project not found: ${projectid}`);
-    }
+                const sampleno =
+                    `${boring.boringnumber ?? ''}-` +
+                    `${sample.sampleset ?? ''}` +
+                    `(${sample.samplenumber ?? ''})`;
 
-    const validNumber = (value, decimals = null) => {
-
-        if (value === null || value === undefined || value === '') {
-            return '';
-        }
-
-        const number = Number(value);
-
-        if (!Number.isFinite(number)) {
-            return '';
-        }
-
-        return decimals === null
-            ? number
-            : number.toFixed(decimals);
-    };
-
-    const samples = [];
-
-    for (const boring of Array.isArray(borings) ? borings : []) {
-
-        if (!Array.isArray(boring.samples)) continue;
-
-        for (const sample of boring.samples) {
-
-            const sampleno =
-                `${boring.boringnumber ?? ''}-` +
-                `${sample.sampleset ?? ''}` +
-                `(${sample.samplenumber ?? ''})`;
-
-            // DRY DENSITY
-            const dryden = calcdryden(
-                sample.wetwgt_2,
-                sample.wetwgt,
-                sample.tarewgt,
-                sample.drywgt,
-                sample.diameter,
-                sample.samplelength
-            );
-
-            // MOISTURE CONTENT
-            const moistureResult = calcmoist(
-                sample.drywgt,
-                sample.tarewgt,
-                sample.wetwgt,
-                sample.wetwgt_2
-            );
-
-            const moist =
-                validNumber(moistureResult) === ''
-                    ? ''
-                    : validNumber(Number(moistureResult) * 100, 1);
-
-            // ATTERBERG LIMITS
-            const ll = Number(sample.ll) > 0
-                ? Number(sample.ll)
-                : '';
-
-            const pi = Number(sample.pi) > 0
-                ? Number(sample.pi)
-                : '';
-
-            // UNCONFINED COMPRESSION
-            const stress = unconfinedcalcs.getMaxStress(sample);
-            const strain = unconfinedcalcs.getMaxStrain(sample);
-
-            // SIEVE ANALYSIS
-            let sieveresult = '';
-
-            if (sample.sieve) {
-
-                const sieve = sample.sieve;
-
-                const netwgt =
-                    Number(sample.drywgt) -
-                    Number(sample.tarewgt);
-
-                const SC = new SoilClassification(
-                    netwgt,
-                    ll,
-                    pi,
-                    Number(sieve.wgt34),
-                    Number(sieve.wgt38),
-                    Number(sieve.wgt4),
-                    Number(sieve.wgt10),
-                    Number(sieve.wgt30),
-                    Number(sieve.wgt40),
-                    Number(sieve.wgt100),
-                    Number(sieve.wgt200)
+                // Dry density
+                const dryden = calcdryden(
+                    sample.wetwgt_2,
+                    sample.wetwgt,
+                    sample.tarewgt,
+                    sample.drywgt,
+                    sample.diameter,
+                    sample.samplelength
                 );
 
-                const gravel = Number(SC.getGravFrac());
-                const sand = Number(SC.getSandFrac());
-                const fines = Number(SC.getFines());
+                // Moisture content
+                const moisture = calcmoist(
+                    sample.drywgt,
+                    sample.tarewgt,
+                    sample.wetwgt,
+                    sample.wetwgt_2
+                );
 
-                const parts = [];
+                const ll = Number(sample.ll) > 0
+                    ? Number(sample.ll)
+                    : '';
 
-                if (Number.isFinite(gravel) && gravel > 0) {
-                    parts.push(`Gravel ${gravel}%`);
+                const pi = Number(sample.pi) > 0
+                    ? Number(sample.pi)
+                    : '';
+
+                // Unconfined compression
+                const stress = unconfinedcalcs.getMaxStress(sample);
+                const strain = unconfinedcalcs.getMaxStrain(sample);
+
+                // Sieve analysis
+                let sieveresult = '';
+
+                if (sample.sieve) {
+
+                    const sieve = sample.sieve;
+
+                    const netwgt =
+                        Number(sample.drywgt) -
+                        Number(sample.tarewgt);
+
+                    const SC = new SoilClassification(
+                        netwgt,
+                        ll,
+                        pi,
+                        Number(sieve.wgt34),
+                        Number(sieve.wgt38),
+                        Number(sieve.wgt4),
+                        Number(sieve.wgt10),
+                        Number(sieve.wgt30),
+                        Number(sieve.wgt40),
+                        Number(sieve.wgt100),
+                        Number(sieve.wgt200)
+                    );
+
+                    const gravel = Number(SC.getGravFrac());
+                    const sand = Number(SC.getSandFrac());
+                    const fines = Number(SC.getFines());
+
+                    const parts = [];
+
+                    if (Number.isFinite(gravel) && gravel > 0) {
+                        parts.push(`Gravel ${gravel}%`);
+                    }
+
+                    if (Number.isFinite(sand) && sand > 0) {
+                        parts.push(`Sand ${sand}%`);
+                    }
+
+                    if (Number.isFinite(fines) && fines > 0) {
+                        parts.push(`Fines ${fines}%`);
+                    }
+
+                    sieveresult = parts.join(', ');
                 }
 
-                if (Number.isFinite(sand) && sand > 0) {
-                    parts.push(`Sand ${sand}%`);
-                }
-
-                if (Number.isFinite(fines) && fines > 0) {
-                    parts.push(`Fines ${fines}%`);
-                }
-
-                sieveresult = parts.join(', ');
+                samples.push({
+                    boringid: boring.boringid,
+                    sampleid: sample.sampleid,
+                    sampleno,
+                    depth: sample.depth ?? '',
+                    dryden: validNumber(dryden),
+                    moist: validNumber(moisture) === ''
+                        ? ''
+                        : validNumber(Number(moisture) * 100, 1),
+                    ll,
+                    pi,
+                    un: Number(stress) > 0
+                        ? validNumber(stress)
+                        : '',
+                    strain: Number(strain) > 0
+                        ? validNumber(strain)
+                        : '',
+                    sieve: sieveresult
+                });
             }
-
-            // STORE CALCULATED SAMPLE
-            samples.push({
-                boringid: boring.boringid,
-                sampleid: sample.sampleid,
-                sampleno,
-                depth: sample.depth ?? '',
-                dryden: validNumber(dryden),
-                moist,
-                ll,
-                pi,
-                un: Number(stress) > 0 ? validNumber(stress) : '',
-                strain: Number(strain) > 0 ? validNumber(strain) : '',
-                sieve: sieveresult
-            });
         }
+
+        return {
+            projectid: project.projectid,
+            projectnumber: project.projectnumber,
+            reporttitle: 'SUMMARY OF LABORATORY TEST RESULTS',
+            title: project.title,
+            projecttitle: project.title,
+            projectaddress: project.projectaddress,
+            projectcity: project.projectcity,
+            samples
+        };
     }
 
-    // RETURN LAB SUMMARY OBJECT
-    return {
-        projectid,
-        projectnumber: project.projectnumber,
-        reporttitle: 'SUMMARY OF LABORATORY TEST RESULTS',
-        title: project.title,
-        projecttitle: project.title,
-        projectaddress: project.projectaddress,
-        projectcity: project.projectcity,
-        samples
-    };
-}
 
-    
+    async loadLabSummary(projectid, options = {}) {
+
+        const gfk = new GFK();
+        const unconfinedcalcs = new UnconfinedCalcs();
+
+        // Reuse project/borings if already loaded by
+        // the complete geotechnical report route.
+        const [project, borings] = await Promise.all([
+            options.project ?? gfk.getProjectById(projectid),
+            options.borings ?? gfk.loadBorings(projectid)
+        ]);
+
+        if (!project) {
+            throw new Error(`Project not found: ${projectid}`);
+        }
+
+        const validNumber = (value, decimals = null) => {
+
+            if (value === null || value === undefined || value === '') {
+                return '';
+            }
+
+            const number = Number(value);
+
+            if (!Number.isFinite(number)) {
+                return '';
+            }
+
+            return decimals === null
+                ? number
+                : number.toFixed(decimals);
+        };
+
+        const samples = [];
+
+        for (const boring of Array.isArray(borings) ? borings : []) {
+
+            if (!Array.isArray(boring.samples)) continue;
+
+            for (const sample of boring.samples) {
+
+                const sampleno =
+                    `${boring.boringnumber ?? ''}-` +
+                    `${sample.sampleset ?? ''}` +
+                    `(${sample.samplenumber ?? ''})`;
+
+                // DRY DENSITY
+                const dryden = calcdryden(
+                    sample.wetwgt_2,
+                    sample.wetwgt,
+                    sample.tarewgt,
+                    sample.drywgt,
+                    sample.diameter,
+                    sample.samplelength
+                );
+
+                // MOISTURE CONTENT
+                const moistureResult = calcmoist(
+                    sample.drywgt,
+                    sample.tarewgt,
+                    sample.wetwgt,
+                    sample.wetwgt_2
+                );
+
+                const moist =
+                    validNumber(moistureResult) === ''
+                        ? ''
+                        : validNumber(Number(moistureResult) * 100, 1);
+
+                // ATTERBERG LIMITS
+                const ll = Number(sample.ll) > 0
+                    ? Number(sample.ll)
+                    : '';
+
+                const pi = Number(sample.pi) > 0
+                    ? Number(sample.pi)
+                    : '';
+
+                // UNCONFINED COMPRESSION
+                const stress = unconfinedcalcs.getMaxStress(sample);
+                const strain = unconfinedcalcs.getMaxStrain(sample);
+
+                // SIEVE ANALYSIS
+                let sieveresult = '';
+
+                if (sample.sieve) {
+
+                    const sieve = sample.sieve;
+
+                    const netwgt =
+                        Number(sample.drywgt) -
+                        Number(sample.tarewgt);
+
+                    const SC = new SoilClassification(
+                        netwgt,
+                        ll,
+                        pi,
+                        Number(sieve.wgt34),
+                        Number(sieve.wgt38),
+                        Number(sieve.wgt4),
+                        Number(sieve.wgt10),
+                        Number(sieve.wgt30),
+                        Number(sieve.wgt40),
+                        Number(sieve.wgt100),
+                        Number(sieve.wgt200)
+                    );
+
+                    const gravel = Number(SC.getGravFrac());
+                    const sand = Number(SC.getSandFrac());
+                    const fines = Number(SC.getFines());
+
+                    const parts = [];
+
+                    if (Number.isFinite(gravel) && gravel > 0) {
+                        parts.push(`Gravel ${gravel}%`);
+                    }
+
+                    if (Number.isFinite(sand) && sand > 0) {
+                        parts.push(`Sand ${sand}%`);
+                    }
+
+                    if (Number.isFinite(fines) && fines > 0) {
+                        parts.push(`Fines ${fines}%`);
+                    }
+
+                    sieveresult = parts.join(', ');
+                }
+
+                // STORE CALCULATED SAMPLE
+                samples.push({
+                    boringid: boring.boringid,
+                    sampleid: sample.sampleid,
+                    sampleno,
+                    depth: sample.depth ?? '',
+                    dryden: validNumber(dryden),
+                    moist,
+                    ll,
+                    pi,
+                    un: Number(stress) > 0 ? validNumber(stress) : '',
+                    strain: Number(strain) > 0 ? validNumber(strain) : '',
+                    sieve: sieveresult
+                });
+            }
+        }
+
+        // RETURN LAB SUMMARY OBJECT
+        return {
+            projectid,
+            projectnumber: project.projectnumber,
+            reporttitle: 'SUMMARY OF LABORATORY TEST RESULTS',
+            title: project.title,
+            projecttitle: project.title,
+            projectaddress: project.projectaddress,
+            projectcity: project.projectcity,
+            samples
+        };
+    }
+
+
 
 
     async registerNewUser(newEngineer) {
@@ -2244,4 +2391,4 @@ async loadLabSummary(projectid, options = {}) {
 }
 
 export default GFK;
-export { GFKCompany, MyProjects, TimeSheets, Schedules, GFKFigures };       // named export
+export { GFKCompany, MyProjects, TimeSheets, Schedules, GFKFigures, CompactionTables };       // named export

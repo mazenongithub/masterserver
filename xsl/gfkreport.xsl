@@ -212,7 +212,7 @@ Proj No.
 <xsl:call-template name="sectionNumber"/>
 .
 <xsl:text> </xsl:text>
-<xsl:value-of select="translate(title, 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')"/>
+<xsl:value-of select="title"/>
 </fo:inline>
 </fo:block>
 <!--   Section content   -->
@@ -747,38 +747,399 @@ Page
 </xsl:choose>
 </xsl:template>
 <!--  Spectral response: type-based, no fabricated seismic values.  -->
-<xsl:template match="section[normalize-space(type)='spectralresponse']" mode="body">
-<xsl:param name="depth" select="1"/>
-<!--   Section heading   -->
-<fo:block id="{generate-id()}" space-after="5pt" keep-with-next.within-page="always">
-<xsl:attribute name="space-before">
-<xsl:choose>
-<xsl:when test="$depth = 1">14pt</xsl:when>
-<xsl:otherwise>9pt</xsl:otherwise>
-</xsl:choose>
-</xsl:attribute>
-<fo:inline font-family="Times New Roman" font-size="10pt" font-weight="bold" color="#000000" text-decoration="underline">
-<xsl:call-template name="sectionNumber"/>
-.
-<xsl:text> </xsl:text>
-<xsl:value-of select="translate(title, 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')"/>
-</fo:inline>
-</fo:block>
-<!--   Section content   -->
-<xsl:if test="string(content)">
-<fo:block font-family="Times New Roman" font-size="10pt" line-height="14pt" space-after="7pt" text-align="justify" white-space-collapse="false" linefeed-treatment="preserve" wrap-option="wrap">
-<xsl:value-of select="content"/>
-</fo:block>
-</xsl:if>
-<xsl:if test="normalize-space(imageurl) != ''">
-<fo:block space-before="8pt" space-after="8pt" text-align="center">
-<fo:external-graphic src="{imageurl}" content-width="scale-to-fit" content-height="scale-to-fit" width="6.3in" height="4in" scaling="uniform"/>
-</fo:block>
-</xsl:if>
-<xsl:apply-templates select="subsections/section" mode="body">
-<xsl:with-param name="depth" select="$depth + 1"/>
-</xsl:apply-templates>
+
+<!-- ============================================== -->
+<!-- SEISMIC DESIGN CRITERIA / SPECTRAL RESPONSE    -->
+<!-- ============================================== -->
+
+<xsl:template
+    match="section[normalize-space(type)='spectralresponse']"
+    mode="body">
+
+    <xsl:param name="depth" select="1"/>
+
+    <!-- Load SDC from the report root -->
+    <xsl:variable name="sdc" select="/report/sdc"/>
+
+    <!-- ========================================== -->
+    <!-- SECTION HEADING                            -->
+    <!-- ========================================== -->
+
+    <fo:block
+        id="{generate-id()}"
+        space-before="10pt"
+        space-after="5pt"
+        keep-with-next.within-page="always">
+
+        <fo:inline
+            font-family="Times New Roman"
+            font-size="10pt"
+            font-weight="bold"
+            text-decoration="underline">
+
+            <xsl:call-template name="sectionNumber"/>
+            <xsl:text>. </xsl:text>
+
+            <xsl:value-of select="title"/>
+
+        </fo:inline>
+    </fo:block>
+
+    <!-- ========================================== -->
+    <!-- SECTION CONTENT                            -->
+    <!-- ========================================== -->
+
+    <xsl:if test="string(content)">
+
+        <fo:block
+            font-family="Times New Roman"
+            font-size="10pt"
+            line-height="14pt"
+            space-after="12pt"
+            text-align="justify"
+            white-space-collapse="false"
+            linefeed-treatment="preserve"
+            wrap-option="wrap">
+
+            <xsl:value-of select="content"/>
+
+        </fo:block>
+
+    </xsl:if>
+
+    <!-- ========================================== -->
+    <!-- SEISMIC DESIGN CRITERIA TABLE              -->
+    <!-- ========================================== -->
+
+    <fo:block
+        font-family="Times New Roman"
+        font-size="10pt"
+        font-weight="bold"
+        text-align="center"
+        space-before="12pt"
+        space-after="8pt"
+        keep-with-next.within-page="always">
+
+        SEISMIC DESIGN CRITERIA
+
+    </fo:block>
+
+    <fo:table
+        table-layout="fixed"
+        width="100%"
+        font-family="Times New Roman"
+        border="3pt double #000000"
+        border-collapse="collapse"
+        space-after="10pt"
+        keep-together.within-page="always">
+
+        <!-- Nine equal-width columns -->
+        <fo:table-column
+            column-width="proportional-column-width(1)"
+            number-columns-repeated="9"/>
+
+        <fo:table-body>
+
+            <!-- ================================ -->
+            <!-- BOLD TABLE HEADINGS              -->
+            <!-- ================================ -->
+
+            <fo:table-row height="0.40in">
+
+                <fo:table-cell
+                    border-right="0.5pt solid black"
+                    border-bottom="0.5pt solid black"
+                    display-align="center"
+                    padding="2pt">
+                    <fo:block text-align="center"
+                        font-size="8pt" font-weight="bold">
+                        SS (g)
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell
+                    border-right="0.5pt solid black"
+                    border-bottom="0.5pt solid black"
+                    display-align="center"
+                    padding="2pt">
+                    <fo:block text-align="center"
+                        font-size="8pt" font-weight="bold">
+                        S1 (g)
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell
+                    border-right="0.5pt solid black"
+                    border-bottom="0.5pt solid black"
+                    display-align="center"
+                    padding="2pt">
+                    <fo:block text-align="center"
+                        font-size="8pt" font-weight="bold">
+                        Site Class
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell
+                    border-right="0.5pt solid black"
+                    border-bottom="0.5pt solid black"
+                    display-align="center"
+                    padding="2pt">
+                    <fo:block text-align="center"
+                        font-size="8pt" font-weight="bold">
+                        FA
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell
+                    border-right="0.5pt solid black"
+                    border-bottom="0.5pt solid black"
+                    display-align="center"
+                    padding="2pt">
+                    <fo:block text-align="center"
+                        font-size="8pt" font-weight="bold">
+                        FV
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell
+                    border-right="0.5pt solid black"
+                    border-bottom="0.5pt solid black"
+                    display-align="center"
+                    padding="2pt">
+                    <fo:block text-align="center"
+                        font-size="8pt" font-weight="bold">
+                        SMS (g)
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell
+                    border-right="0.5pt solid black"
+                    border-bottom="0.5pt solid black"
+                    display-align="center"
+                    padding="2pt">
+                    <fo:block text-align="center"
+                        font-size="8pt" font-weight="bold">
+                        SM1 (g)
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell
+                    border-right="0.5pt solid black"
+                    border-bottom="0.5pt solid black"
+                    display-align="center"
+                    padding="2pt">
+                    <fo:block text-align="center"
+                        font-size="8pt" font-weight="bold">
+                        SDS (g)
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell
+                    border-bottom="0.5pt solid black"
+                    display-align="center"
+                    padding="2pt">
+                    <fo:block text-align="center"
+                        font-size="8pt" font-weight="bold">
+                        SD1 (g)
+                    </fo:block>
+                </fo:table-cell>
+
+            </fo:table-row>
+
+            <!-- ================================ -->
+            <!-- DATA ROW                         -->
+            <!-- ================================ -->
+
+            <fo:table-row height="0.35in">
+
+                <fo:table-cell border-right="0.5pt solid black"
+                    display-align="center" padding="2pt">
+                    <fo:block text-align="center" font-size="9pt">
+                        <xsl:value-of select="$sdc/SS"/>
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell border-right="0.5pt solid black"
+                    display-align="center" padding="2pt">
+                    <fo:block text-align="center" font-size="9pt">
+                        <xsl:value-of select="$sdc/S1"/>
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell border-right="0.5pt solid black"
+                    display-align="center" padding="2pt">
+                    <fo:block text-align="center" font-size="9pt">
+                        <xsl:value-of select="$sdc/SiteClass"/>
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell border-right="0.5pt solid black"
+                    display-align="center" padding="2pt">
+                    <fo:block text-align="center" font-size="9pt">
+                        <xsl:value-of select="$sdc/FA"/>
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell border-right="0.5pt solid black"
+                    display-align="center" padding="2pt">
+                    <fo:block text-align="center" font-size="9pt">
+                        <xsl:value-of select="$sdc/FV"/>
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell border-right="0.5pt solid black"
+                    display-align="center" padding="2pt">
+                    <fo:block text-align="center" font-size="9pt">
+                        <xsl:value-of select="$sdc/SMS"/>
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell border-right="0.5pt solid black"
+                    display-align="center" padding="2pt">
+                    <fo:block text-align="center" font-size="9pt">
+                        <xsl:value-of select="$sdc/SM1"/>
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell border-right="0.5pt solid black"
+                    display-align="center" padding="2pt">
+                    <fo:block text-align="center" font-size="9pt">
+                        <xsl:value-of select="$sdc/SDS"/>
+                    </fo:block>
+                </fo:table-cell>
+
+                <fo:table-cell display-align="center" padding="2pt">
+                    <fo:block text-align="center" font-size="9pt">
+                        <xsl:value-of select="$sdc/SD1"/>
+                    </fo:block>
+                </fo:table-cell>
+
+            </fo:table-row>
+
+        </fo:table-body>
+
+    </fo:table>
+
+    <!-- ========================================== -->
+    <!-- LEGEND                                     -->
+    <!-- ========================================== -->
+
+    <fo:block
+        font-family="Times New Roman"
+        font-size="9pt"
+        font-weight="bold"
+        text-decoration="underline"
+        space-before="8pt"
+        space-after="5pt"
+        keep-with-next.within-page="always">
+
+        Legend:
+
+    </fo:block>
+
+    <fo:block
+        font-family="Times New Roman"
+        font-size="9pt"
+        line-height="12pt"
+        space-after="4pt">
+
+        <fo:inline font-weight="bold">SS</fo:inline>
+        - Mapped maximum considered earthquake spectral
+        response acceleration at short periods (0.2 second).
+
+    </fo:block>
+
+    <fo:block font-size="9pt" line-height="12pt" space-after="4pt">
+
+        <fo:inline font-weight="bold">S1</fo:inline>
+        - Mapped maximum considered earthquake spectral
+        response acceleration at a period of 1.0 second.
+
+    </fo:block>
+
+    <fo:block font-size="9pt" line-height="12pt" space-after="4pt">
+
+        <fo:inline font-weight="bold">Site Class</fo:inline>
+        - Classification of subsurface conditions used
+        to determine seismic site response.
+
+    </fo:block>
+
+    <fo:block font-size="9pt" line-height="12pt" space-after="4pt">
+
+        <fo:inline font-weight="bold">FA</fo:inline>
+        - Short-period site amplification coefficient
+        (dimensionless).
+
+    </fo:block>
+
+    <fo:block font-size="9pt" line-height="12pt" space-after="4pt">
+
+        <fo:inline font-weight="bold">FV</fo:inline>
+        - One-second-period site amplification coefficient
+        (dimensionless).
+
+    </fo:block>
+
+    <fo:block font-size="9pt" line-height="12pt" space-after="4pt">
+
+        <fo:inline font-weight="bold">SMS</fo:inline>
+        - Site-modified maximum considered earthquake
+        spectral response acceleration at short periods.
+
+    </fo:block>
+
+    <fo:block font-size="9pt" line-height="12pt" space-after="4pt">
+
+        <fo:inline font-weight="bold">SM1</fo:inline>
+        - Site-modified maximum considered earthquake
+        spectral response acceleration at 1.0 second.
+
+    </fo:block>
+
+    <fo:block font-size="9pt" line-height="12pt" space-after="4pt">
+
+        <fo:inline font-weight="bold">SDS</fo:inline>
+        - Design spectral response acceleration
+        at short periods.
+
+    </fo:block>
+
+    <fo:block font-size="9pt" line-height="12pt" space-after="4pt">
+
+        <fo:inline font-weight="bold">SD1</fo:inline>
+        - Design spectral response acceleration
+        at 1.0 second.
+
+    </fo:block>
+
+    <fo:block
+        font-size="8pt"
+        font-style="italic"
+        space-before="6pt"
+        space-after="10pt">
+
+        Note: (g) indicates acceleration expressed
+        as a fraction of gravitational acceleration.
+
+    </fo:block>
+
+    <!-- ========================================== -->
+    <!-- NESTED SUBSECTIONS                         -->
+    <!-- ========================================== -->
+
+    <xsl:apply-templates
+        select="subsections/section"
+        mode="body">
+
+        <xsl:with-param
+            name="depth"
+            select="$depth + 1"/>
+
+    </xsl:apply-templates>
+
 </xsl:template>
+
 <!--  Optional inline figures, when a figure section is outside an appendix.  -->
 <xsl:template match="section[normalize-space(type)='figure']" mode="body">
 <xsl:param name="depth" select="1"/>
