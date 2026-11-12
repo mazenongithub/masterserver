@@ -5,7 +5,19 @@ import UnconfinedCalcs from './unconfinedcalcs.js';
 import { calcdryden, calcmoist } from '../functions/gfkfunctions.js';
 import SoilClassification from './soilclassification.js';
 
-
+const GraphicLogSchema = new mongoose.Schema({
+    companyid: {
+        type: String,
+        required: true,
+        unique: true
+    },
+    graphics: [{
+        graphicid: String,
+        code: String,
+        graphiclog: String,
+        description: String
+    }]
+});
 
 const ProjectSchema = new mongoose.Schema({
     companyid: String,
@@ -115,7 +127,7 @@ const BoringSchema = new mongoose.Schema({
             spt: String,
             tarewgt: String,
             tareno: String,
-            graphiclog: String,
+            graphicid: String,
             ll: String,
             pi: String,
             remarks: String,
@@ -158,17 +170,17 @@ const fieldReportSchema = new mongoose.Schema({
             caption: String
         }],
         compactiontests: [{
-
             testid: String,
-            timetest: String,
+            timetest: {
+                type: Date,
+                default: Date.now
+            },
             testnum: String,
             elevation: String,
             location: String,
             wetpcf: String,
             moistpcf: String,
             curveid: String,
-            group: String,
-            letterid: String
         }]
     }]
 
@@ -490,132 +502,133 @@ const Schedules = mongoose.model("schedules", ScheduleSchema)
 const GFKReports = mongoose.model("gfkreports", reportSchema)
 const GFKFigures = mongoose.model("gfkfigures", figureSchema)
 const CompactionTables = mongoose.model("compactiontables", CompactionTableSchema)
+const GraphicLogs = mongoose.model("graphiclogs", GraphicLogSchema)
 
 
 class GFK {
 
 
 
-async findProposalByID(projectid, proposalid) {
+    async findProposalByID(projectid, proposalid) {
 
-    try {
+        try {
 
-        if (!projectid || !proposalid) {
-            return null;
-        }
-
-        // Find schedule containing the proposal
-        const schedule = await Schedules.findOne({
-            projectid,
-            'proposals.proposalid': proposalid
-        }).lean();
-
-        if (!schedule) {
-            return null;
-        }
-
-        // Find the specific proposal
-        const proposal = schedule.proposals.find(
-            p => p.proposalid === proposalid
-        );
-
-        if (!proposal) {
-            return null;
-        }
-
-        // Resolve referenced labor items
-        const laborIDs = new Set(proposal.labor || []);
-
-        const laboritems = (schedule.labor || []).filter(
-            item => laborIDs.has(item.laborid)
-        );
-
-        // Resolve referenced cost items
-        const costIDs = new Set(proposal.costs || []);
-
-        const costitems = (schedule.costs || []).filter(
-            item => costIDs.has(item.costid)
-        );
-
-        // Calculate labor total
-        const labortotal = laboritems.reduce((total, item) => {
-
-            const hours =
-                (new Date(item.timeout) - new Date(item.timein))
-                / (1000 * 60 * 60);
-
-            if (!Number.isFinite(hours) || hours < 0) {
-                return total;
+            if (!projectid || !proposalid) {
+                return null;
             }
 
-            return total + hours * Number(item.laborrate || 0);
-
-        }, 0);
-
-        // Calculate costs total
-        const costtotal = costitems.reduce((total, item) => {
-
-            return total +
-                Number(item.unitcost || 0) *
-                Number(item.quantity ?? 1);
-
-        }, 0);
-
-        return {
-            ...proposal,
-            projectid,
-            laboritems,
-            costitems,
-            labortotal,
-            costtotal,
-            total: labortotal + costtotal
-        };
-
-    } catch (err) {
-
-        console.error('Error finding proposal:', err);
-        throw err;
-    }
-}
-
-
-    
-async findCompactionTableByID(projectid, tableid) {
-
-    try {
-
-        if (!projectid || !tableid) {
-            return null;
-        }
-
-        const document = await CompactionTables.findOne(
-            {
+            // Find schedule containing the proposal
+            const schedule = await Schedules.findOne({
                 projectid,
-                'tables.tableid': tableid
-            },
-            {
-                tables: {
-                    $elemMatch: { tableid }
-                }
+                'proposals.proposalid': proposalid
+            }).lean();
+
+            if (!schedule) {
+                return null;
             }
-        ).lean();
 
-        if (!document?.tables?.length) {
-            return null;
+            // Find the specific proposal
+            const proposal = schedule.proposals.find(
+                p => p.proposalid === proposalid
+            );
+
+            if (!proposal) {
+                return null;
+            }
+
+            // Resolve referenced labor items
+            const laborIDs = new Set(proposal.labor || []);
+
+            const laboritems = (schedule.labor || []).filter(
+                item => laborIDs.has(item.laborid)
+            );
+
+            // Resolve referenced cost items
+            const costIDs = new Set(proposal.costs || []);
+
+            const costitems = (schedule.costs || []).filter(
+                item => costIDs.has(item.costid)
+            );
+
+            // Calculate labor total
+            const labortotal = laboritems.reduce((total, item) => {
+
+                const hours =
+                    (new Date(item.timeout) - new Date(item.timein))
+                    / (1000 * 60 * 60);
+
+                if (!Number.isFinite(hours) || hours < 0) {
+                    return total;
+                }
+
+                return total + hours * Number(item.laborrate || 0);
+
+            }, 0);
+
+            // Calculate costs total
+            const costtotal = costitems.reduce((total, item) => {
+
+                return total +
+                    Number(item.unitcost || 0) *
+                    Number(item.quantity ?? 1);
+
+            }, 0);
+
+            return {
+                ...proposal,
+                projectid,
+                laboritems,
+                costitems,
+                labortotal,
+                costtotal,
+                total: labortotal + costtotal
+            };
+
+        } catch (err) {
+
+            console.error('Error finding proposal:', err);
+            throw err;
         }
-
-        return document.tables[0];
-
-    } catch (err) {
-
-        console.error(
-            'Error finding compaction table:',
-            err
-        );
-
-        throw err;
     }
-}
+
+
+
+    async findCompactionTableByID(projectid, tableid) {
+
+        try {
+
+            if (!projectid || !tableid) {
+                return null;
+            }
+
+            const document = await CompactionTables.findOne(
+                {
+                    projectid,
+                    'tables.tableid': tableid
+                },
+                {
+                    tables: {
+                        $elemMatch: { tableid }
+                    }
+                }
+            ).lean();
+
+            if (!document?.tables?.length) {
+                return null;
+            }
+
+            return document.tables[0];
+
+        } catch (err) {
+
+            console.error(
+                'Error finding compaction table:',
+                err
+            );
+
+            throw err;
+        }
+    }
 
 
 
@@ -2391,4 +2404,4 @@ async findCompactionTableByID(projectid, tableid) {
 }
 
 export default GFK;
-export { GFKCompany, MyProjects, TimeSheets, Schedules, GFKFigures, CompactionTables };       // named export
+export { GFKCompany, MyProjects, TimeSheets, Schedules, GFKFigures, CompactionTables, GraphicLogs };       // named export
