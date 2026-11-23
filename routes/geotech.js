@@ -10,8 +10,9 @@ import { compareProjects, validateClientIdentityChange, validateClientRegister, 
 import Stripe from "stripe";
 import Notifications from "../classes/notifications.js";
 import { validateEmail, formatDateExp } from '../functions/index.js'
-import { getAuth } from '../config/firebase.js';
-import { STATUS_CODES } from "http";
+import CompactionTables from '../classes/compactiontables.js';
+import SDC from '../classes/sdc.js';
+import Figures from '../classes/figures.js';
 
 export default (app) => {
 
@@ -36,6 +37,7 @@ export default (app) => {
 
 
             let getUser = await geotech.getFireBaseUser(authToken)
+
             const uid = getUser.uid;
 
             const createClient = {
@@ -406,9 +408,9 @@ export default (app) => {
                 return res.status(404).json({ message: "Client not found" });
             }
 
-          
 
-            const [ projects, engineers] = await Promise.all([
+
+            const [projects, engineers] = await Promise.all([
                 geotech.findProjectsByClientID(clientID),
                 gfk.loadMyEngineers()
             ]);
@@ -437,6 +439,7 @@ export default (app) => {
         try {
             // Attempt client login
             const getUser = await geotech.getFireBaseUser(authToken)
+
             const uid = getUser.uid;
 
             const clientInfo = {
@@ -962,6 +965,10 @@ export default (app) => {
         try {
             const { projectid } = req.params;
             const gfk = new GFK();
+            const sdcHandler = new SDC();
+            const figureHandler = new Figures();
+            const compactionTablesHandler = new CompactionTables();
+
 
             if (!projectid) {
                 return res.status(400).json({
@@ -971,17 +978,24 @@ export default (app) => {
             }
 
             // Load borings and field reports in parallel
-            const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = [], timesheet = [], schedule = []] = await Promise.all([
-                gfk.loadBorings(projectid).catch(() => []),
-                gfk.loadFieldReports(projectid).catch(() => []),
-                gfk.loadCompactionCurves(projectid).catch(() => []),
-                gfk.loadSeismic(projectid).catch(() => []),
-                gfk.loadPTSlab(projectid).catch(() => []),
-                gfk.loadSlope(projectid).catch(() => []),
-                gfk.loadTimesheet(projectid).catch(() => []),
-                gfk.loadSchedule(projectid).catch(() => [])
+            const [borings = [], fieldreports = [], compactioncurves = [], seismic = [], ptslab = [], slope = [], timesheet = [], schedule = [], reports,
+                sdc,
+                figures,
+                compactionTableData] = await Promise.all([
+                    gfk.loadBorings(projectid).catch(() => []),
+                    gfk.loadFieldReports(projectid).catch(() => []),
+                    gfk.loadCompactionCurves(projectid).catch(() => []),
+                    gfk.loadSeismic(projectid).catch(() => []),
+                    gfk.loadPTSlab(projectid).catch(() => []),
+                    gfk.loadSlope(projectid).catch(() => []),
+                    gfk.loadTimesheet(projectid).catch(() => []),
+                    gfk.loadSchedule(projectid).catch(() => []),
+                    gfk.loadReports(projectid),
+                    sdcHandler.loadSeismicDesignCriteria(projectid),
+                    figureHandler.loadProjectFigures(projectid),
+                    compactionTablesHandler.loadCompactionTables(projectid)
 
-            ]);
+                ]);
 
             // Return response with projectid attached
             return res.status(200).json({
@@ -995,6 +1009,10 @@ export default (app) => {
                 slope,
                 timesheet,
                 schedule,
+                reports,
+                SDC: sdc,
+                figures,
+                tables: compactionTableData.tables,
                 hasData: borings.length > 0 || fieldreports.length > 0 || compactioncurves.length > 0 || seismic.length > 0 || ptslab.length > 0 || slope.length > 0 || timesheet.length > 0,
 
             });
