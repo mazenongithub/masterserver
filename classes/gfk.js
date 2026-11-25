@@ -468,24 +468,33 @@ const ScheduleSchema = new mongoose.Schema({
 });
 
 
-
 const contactSchema = new mongoose.Schema({
-    company: String,
-    lab: { type: Boolean, default: false },
-    liquefaction: { type: Boolean, default: false },
-    logdraft: { type: Boolean, default: false },
-    description: String,
-    emailaddress: { type: String, required: true },
-    fullname: { type: String, required: true },
-    field: { type: Boolean, default: false },
-    phonenumber: { type: String, required: true },
-    ptslab: { type: Boolean, default: false },
-    slope: { type: Boolean, default: false },
-    reports: { type: Boolean, default: false },
-    invoice: { type: Boolean, default: false },
-    created: { type: Date, default: Date.now }
-
-})
+    fullname: {
+        type: String,
+        required: true,
+        trim: true
+    },
+    company: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    emailaddress: {
+        type: String,
+        required: true,
+        trim: true,
+        lowercase: true
+    },
+    description: {
+        type: String,
+        required: true,
+        trim: true
+    },
+    created: {
+        type: Date,
+        default: Date.now
+    }
+});
 
 const GFKContactUs = mongoose.model("GFKContactUs", contactSchema);
 const MyProjects = mongoose.model("gfkprojects", ProjectSchema);
@@ -835,141 +844,382 @@ class GFK {
         }
     }
 
-    async sendContactEmail(values) {
-        let {
-            emailaddress,
-            fullname,
-            company,
-            phonenumber,
-            lab,
-            liquefaction,
-            logdraft,
-            field,
-            ptslab,
-            description,
-            slope,
-            reports,
-            invoice,
-            created
-        } = values;
+  
+async sendContactEmail(values) {
 
-        created = new Date(created).toLocaleTimeString('en-US', {
-            timeZone: 'America/Los_Angeles'
-        });
+    const {
+        emailaddress,
+        fullname,
+        company,
+        description,
+        created
+    } = values;
 
-        const labModules = lab
-            ? `
-      <li>Liquefaction Analysis: ${liquefaction ? 'Yes' : 'No'}</li>
-      <li>PT Slab Design & Reporting: ${ptslab ? 'Yes' : 'No'}</li>
-      <li>Geotechnical Log Drafting: ${logdraft ? 'Yes' : 'No'}</li>
-    `
-            : `<li>Soil Lab Add-on Modules: N/A</li>`;
+    const name = this.escapeHTML(fullname);
+    const companyName = this.escapeHTML(company || 'Not provided');
+    const email = this.escapeHTML(emailaddress);
+    const message = this.escapeHTML(description);
 
-        await transporter.sendMail({
-            from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
-            to: 'mazen@civilengineer.io',
-            replyTo: emailaddress,
-            subject: 'New Service Request Submission',
-            html: `
-      <div style="font-family: Arial, Helvetica, sans-serif; color: #333;">
-        <h2>New Service Request</h2>
+    const submitted = new Date(created).toLocaleString('en-US', {
+        timeZone: 'America/Los_Angeles',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short'
+    });
 
-        <p><strong>Name:</strong> ${fullname}</p>
-        <p><strong>Company:</strong> ${company || 'N/A'}</p>
-        <p><strong>Email:</strong> ${emailaddress}</p>
-        <p><strong>Phone:</strong> ${phonenumber || 'N/A'}</p>
+    await transporter.sendMail({
 
-        <h3>Services Requested</h3>
-        <ul>
-          <li>Soil Lab Reporting Platform: ${lab ? 'Yes' : 'No'}</li>
-          ${labModules}
-          <li>Field Reports and Reporting: ${field ? 'Yes' : 'No'}</li>
-          <li>Slope Stability: ${slope ? 'Yes' : 'No'}</li>
-          <li>Geotechnical Proposals and Reports: ${reports ? 'Yes' : 'No'}</li>
-          <li>Time / Invoice: ${invoice ? 'Yes' : 'No'}</li>
-        </ul>
+        from: '"GFK | CivilEngineer.io" <support@civilengineer.io>',
 
-        <h3>Brief Description of Needs</h3>
-        <p style="white-space: pre-line;">
-          ${description}
-        </p>
+        to: 'support@civilengineer.io',
 
-        <hr />
+        replyTo: emailaddress,
 
-        <p style="font-size: 12px; color: #777;">
-          This message was generated from the CivilEngineer.io contact form on ${created}.
-        </p>
-      </div>
-    `
-        });
-    }
+        subject: `GFK Contact Inquiry — ${fullname}`,
+
+        html: `
+            <div style="
+                font-family: Arial, Helvetica, sans-serif;
+                background: #F0F3F8;
+                padding: 30px 15px;
+                color: #303845;
+            ">
+
+                <div style="
+                    max-width: 650px;
+                    margin: auto;
+                    background: #FFFFFF;
+                    border: 1px solid #DCE3EE;
+                    border-top: 5px solid #6A7EA6;
+                    border-radius: 8px;
+                    padding: 30px;
+                ">
+
+                    <div style="
+                        color: #6A7EA6;
+                        font-size: 12px;
+                        font-weight: bold;
+                        letter-spacing: 2px;
+                        margin-bottom: 15px;
+                    ">
+                        CIVILENGINEER.IO | GFK
+                    </div>
+
+                    <h2 style="
+                        color: #303845;
+                        margin: 0 0 10px;
+                        font-size: 25px;
+                    ">
+                        New Contact Inquiry
+                    </h2>
+
+                    <p style="
+                        color: #657084;
+                        font-size: 14px;
+                        margin-bottom: 30px;
+                    ">
+                        A visitor submitted a message through
+                        the GFK contact form.
+                    </p>
+
+                    <table style="
+                        width: 100%;
+                        border-collapse: collapse;
+                        font-size: 15px;
+                    ">
+
+                        <tr>
+                            <td style="padding: 10px 0; font-weight: bold;">
+                                Name
+                            </td>
+                            <td style="padding: 10px 0;">
+                                ${name}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="padding: 10px 0; font-weight: bold;">
+                                Company
+                            </td>
+                            <td style="padding: 10px 0;">
+                                ${companyName}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="padding: 10px 0; font-weight: bold;">
+                                Email
+                            </td>
+                            <td style="padding: 10px 0;">
+                                <a
+                                    href="mailto:${email}"
+                                    style="color: #4C6088;"
+                                >
+                                    ${email}
+                                </a>
+                            </td>
+                        </tr>
+
+                    </table>
+
+                    <div style="
+                        margin-top: 25px;
+                        padding-top: 20px;
+                        border-top: 1px solid #DCE3EE;
+                    ">
+
+                        <h3 style="
+                            color: #303845;
+                            font-size: 18px;
+                        ">
+                            Message
+                        </h3>
+
+                        <div style="
+                            background: #F0F3F8;
+                            padding: 20px;
+                            border-radius: 6px;
+                            line-height: 1.8;
+                            font-size: 15px;
+                            white-space: pre-wrap;
+                            overflow-wrap: anywhere;
+                        ">${message}</div>
+
+                    </div>
+
+                    <div style="
+                        margin-top: 30px;
+                        padding-top: 20px;
+                        border-top: 1px solid #DCE3EE;
+                        color: #657084;
+                        font-size: 12px;
+                    ">
+                        Submitted: ${submitted}
+
+                        <p style="margin-bottom: 0;">
+                            GFK Contact Form |
+                            CivilEngineer.io
+                        </p>
+                    </div>
+
+                </div>
+            </div>
+        `
+    });
+}
 
 
-    async sendClientEmail(values) {
 
-        let { emailaddress, fullname, company, phonenumber, lab, liquefaction, logdraft, field, ptslab, description, slope, reports, invoice, created } = values
-        created = new Date(created).toLocaleTimeString('en-US', {
-            timeZone: 'America/Los_Angeles'
-        });
+   
+async sendClientEmail(values) {
 
-        const labModules = lab
-            ? `
-      <li>Liquefaction Analysis: ${liquefaction ? 'Yes' : 'No'}</li>
-      <li>PT Slab Design & Reporting: ${ptslab ? 'Yes' : 'No'}</li>
-      <li>Geotechnical Log Drafting: ${logdraft ? 'Yes' : 'No'}</li>
-    `
-            : `<li>Soil Lab Add-on Modules: N/A</li>`;
+    const {
+        emailaddress,
+        fullname,
+        company,
+        description,
+        created
+    } = values;
 
-        await transporter.sendMail({
-            from: `"CivilEngineer.io" <mazen@civilengineer.io>`,
-            to: emailaddress,
-            subject: 'We received your service request',
-            html: `
-        <div style="font-family: Arial, Helvetica, sans-serif; color: #333;">
-          <h2>Thank you for contacting CivilEngineer.io</h2>
-    
-          <p>Hi ${fullname},</p>
-    
-          <p>
-            We’ve received your service request and a member of our team will review it shortly.
-          </p>
-    
-          <h3>Your Request Summary</h3>
-    
-          <p><strong>Company:</strong> ${company || 'N/A'}</p>
-    
-          <ul>
-            <li>Soil Lab Reporting Platform : ${lab ? 'Yes' : 'No'}</li>
-            ${labModules}
-            <li>Field Reports and Reporting: ${field ? 'Yes' : 'No'}</li>
-            <li>Slope Stability: ${slope ? 'Yes' : 'No'}</li>
-            <li>Geotechnical Proposals and Reports: ${reports ? 'Yes' : 'No'}</li>
-            <li>Time/Invoice: ${invoice ? 'Yes' : 'No'}</li>
-          </ul>
-    
-          <h3>Details</h3>
-          <p style="white-space: pre-line;">
-            ${description}
-          </p>
-    
-          <p>
-            If you need to add information, simply reply to this email.
-          </p>
-    
-          <p>
-            — CivilEngineer.io Team
-          </p>
-    
-          <hr />
-          <p style="font-size: 12px; color: #777;">
-            This is an automated confirmation created on ${created}. Please do not share sensitive information by email.
-          </p>
-    
-    
-        </div>
-      `
-        });
+    const name = this.escapeHTML(fullname);
+    const companyName = this.escapeHTML(company || '');
+    const message = this.escapeHTML(description);
 
+    const submitted = new Date(created).toLocaleString('en-US', {
+        timeZone: 'America/Los_Angeles',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short'
+    });
+
+    await transporter.sendMail({
+
+        from: '"GFK | CivilEngineer.io" <support@civilengineer.io>',
+
+        to: emailaddress,
+
+        replyTo: 'support@civilengineer.io',
+
+        subject: 'GFK | We Received Your Message',
+
+        html: `
+            <div style="
+                font-family: Arial, Helvetica, sans-serif;
+                background: #F0F3F8;
+                padding: 30px 15px;
+                color: #303845;
+            ">
+
+                <div style="
+                    max-width: 650px;
+                    margin: auto;
+                    background: #FFFFFF;
+                    border: 1px solid #DCE3EE;
+                    border-top: 5px solid #6A7EA6;
+                    border-radius: 8px;
+                    padding: 30px;
+                ">
+
+                    <div style="
+                        color: #6A7EA6;
+                        font-size: 12px;
+                        font-weight: bold;
+                        letter-spacing: 2px;
+                        margin-bottom: 15px;
+                    ">
+                        CIVILENGINEER.IO | GFK
+                    </div>
+
+                    <h2 style="
+                        color: #303845;
+                        font-size: 25px;
+                        margin-bottom: 25px;
+                    ">
+                        Thank You for Contacting GFK
+                    </h2>
+
+                    <p style="
+                        font-size: 16px;
+                        line-height: 1.8;
+                    ">
+                        Hello ${name},
+                    </p>
+
+                    <p style="
+                        font-size: 16px;
+                        line-height: 1.8;
+                    ">
+                        Thank you for your interest in GFK,
+                        the geotechnical engineering platform
+                        powered by CivilEngineer.io.
+                    </p>
+
+                    <p style="
+                        font-size: 16px;
+                        line-height: 1.8;
+                    ">
+                        We've received your message and
+                        will review your inquiry.
+                        We'll respond as soon as possible.
+                    </p>
+
+                    <div style="
+                        margin-top: 30px;
+                        padding: 22px;
+                        background: #F0F3F8;
+                        border-left: 4px solid #6A7EA6;
+                        border-radius: 5px;
+                    ">
+
+                        <h3 style="
+                            color: #303845;
+                            margin-top: 0;
+                            font-size: 18px;
+                        ">
+                            Your Message
+                        </h3>
+
+                        ${companyName ? `
+                            <p style="
+                                font-size: 14px;
+                                color: #657084;
+                            ">
+                                <strong>Company:</strong>
+                                ${companyName}
+                            </p>
+                        ` : ''}
+
+                        <div style="
+                            font-size: 15px;
+                            line-height: 1.8;
+                            white-space: pre-wrap;
+                            overflow-wrap: anywhere;
+                        ">${message}</div>
+
+                    </div>
+
+                    <p style="
+                        margin-top: 30px;
+                        font-size: 15px;
+                        line-height: 1.8;
+                    ">
+                        If you have additional questions
+                        or information to share,
+                        simply reply to this email.
+                    </p>
+
+                    <p style="
+                        margin-top: 25px;
+                        font-size: 15px;
+                        line-height: 1.8;
+                    ">
+                        Best regards,<br />
+                        <strong>
+                            GFK | CivilEngineer.io
+                        </strong>
+                    </p>
+
+                    <div style="
+                        margin-top: 35px;
+                        padding-top: 20px;
+                        border-top: 1px solid #DCE3EE;
+                        text-align: center;
+                    ">
+
+                        <a
+                            href="https://gfk.civilengineer.io/"
+                            style="
+                                display: inline-block;
+                                background: #6A7EA6;
+                                color: #FFFFFF;
+                                padding: 13px 25px;
+                                text-decoration: none;
+                                border-radius: 5px;
+                                font-size: 14px;
+                                font-weight: bold;
+                            "
+                        >
+                            Visit GFK
+                        </a>
+
+                        <p style="
+                            margin-top: 25px;
+                            color: #657084;
+                            font-size: 12px;
+                        ">
+                            Message received: ${submitted}
+                        </p>
+
+                        <p style="
+                            font-size: 12px;
+                            color: #657084;
+                        ">
+                            This is an automated confirmation
+                            from CivilEngineer.io.
+                        </p>
+
+                    </div>
+
+                </div>
+            </div>
+        `
+    });
+}
+
+
+    escapeHTML(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 
     async insertContact(contact) {

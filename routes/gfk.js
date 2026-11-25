@@ -267,86 +267,111 @@ export default (app) => {
   );
 
 
-  app.post('/gfk/savecontactus', rateLimiter, async (req, res) => {
+app.post('/gfk/savecontactus', rateLimiter, async (req, res) => {
+
     const gfk = new GFK();
     const civilengineer = new CivilEngineer();
 
     try {
-      const {
-        fullname,
-        company,
-        emailaddress,
-        phonenumber,
-        lab,
-        liquefaction,
-        logdraft,
-        field,
-        ptslab,
-        slope,
-        reports,
-        invoice,
-        description,
-        captchaToken
-      } = req.body;
+        const {
+            fullname,
+            company,
+            emailaddress,
+            description,
+            captchaToken
+        } = req.body;
 
-      if (!captchaToken) {
-        return res.status(400).json({ message: "Captcha required" });
-      }
+        // Validate required fields
+        if (
+            typeof fullname !== 'string' ||
+            typeof emailaddress !== 'string' ||
+            typeof description !== 'string' ||
+            !fullname.trim() ||
+            !emailaddress.trim() ||
+            !description.trim()
+        ) {
+            return res.status(400).json({
+                error: 'Full name, email address, and message are required.'
+            });
+        }
 
-      // Required field validation
-      if (!fullname || !emailaddress) {
-        return res.status(400).json({
-          error: 'fullname, emailaddress, and detail are required'
+        // Validate email format
+        const email = emailaddress.trim().toLowerCase();
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!emailPattern.test(email)) {
+            return res.status(400).json({
+                error: 'Please enter a valid email address.'
+            });
+        }
+
+        // Check Turnstile token
+        if (!captchaToken) {
+            return res.status(400).json({
+                error: 'Security verification is required.'
+            });
+        }
+
+        // Verify Cloudflare Turnstile
+        const verification =
+            await civilengineer.verifyTurnstile(
+                captchaToken,
+                req.ip
+            );
+
+        if (!verification.success) {
+            return res.status(403).json({
+                error: 'Security verification failed. Please try again.'
+            });
+        }
+
+        // Build contact document
+        const values = {
+            fullname: fullname.trim(),
+            company:
+                typeof company === 'string'
+                    ? company.trim()
+                    : '',
+            emailaddress: email,
+            description: description.trim(),
+            created: new Date()
+        };
+
+        // Save contact submission
+        const contactus = await gfk.insertContact(values);
+
+        // Send notification and confirmation emails
+        const emailResults = await Promise.allSettled([
+            gfk.sendContactEmail(contactus),
+            gfk.sendClientEmail(contactus)
+        ]);
+
+        // Log email failures without losing the saved submission
+        emailResults.forEach((result, index) => {
+            if (result.status === 'rejected') {
+                console.error(
+                    index === 0
+                        ? 'Contact notification email failed:'
+                        : 'Client confirmation email failed:',
+                    result.reason
+                );
+            }
         });
-      }
 
-      const verification = await civilengineer.verifyTurnstile(
-        captchaToken,
-        req.ip
-      );
-
-      if (!verification.success) {
-        return res.status(403).json({
-          error: "Captcha verification failed"
+        return res.status(201).json({
+            contactus,
+            message: 'Your message has been submitted successfully.'
         });
-      }
-
-      // Build document matching schema
-      const values = {
-        company: company || '',
-        lab: Boolean(lab),
-        liquefaction: Boolean(liquefaction),
-        logdraft: Boolean(logdraft),
-        description: description || "",
-        emailaddress,
-        fullname,
-        field: Boolean(field),
-        phonenumber: phonenumber || '',
-        ptslab: Boolean(ptslab),
-        slope: Boolean(slope),
-        reports: Boolean(reports),
-        invoice: Boolean(invoice),
-        created: new Date()
-      };
-
-      const contactus = await gfk.insertContact(values)
-
-      // Send both emails in parallel
-      await Promise.all([
-        gfk.sendContactEmail(contactus),
-        gfk.sendClientEmail(contactus)
-      ]);
-
-      return res.status(201).json({ contactus, message: `Your request have been submitted successfully ` });
 
     } catch (err) {
-      console.error('save contact us error:', err);
+        console.error('Save contact us error:', err);
 
-      return res.status(500).json({
-        error: 'could not save contact us form'
-      });
+        return res.status(500).json({
+            error: 'Unable to submit your message. Please try again.'
+        });
     }
-  })
+});
+
 
 
   app.post("/gfk/upload/fieldimage", checkSessionGFK, uploadFieldImage.single("fieldimage"), async (req, res) => {
