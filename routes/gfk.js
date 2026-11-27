@@ -13,7 +13,7 @@ import SoilClassification from '../classes/soilclassification.js';
 import ChatUser from '../classes/chatuser.js'
 import CivilEngineer from '../classes/civilengineer.js'
 import { rateLimiter } from '../middleware/ratelimit.js';
-import { uploadImage, getImage, downloadImage } from '../functions/b2storage.js';
+import { uploadImage, getImage, downloadImage, deleteImage } from '../functions/b2storage.js';
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
@@ -1133,6 +1133,49 @@ app.get(
     }
   );
 
+app.delete(
+    '/gfk/:companyid/graphiclogs/:graphicid/image',
+    checkSessionGFK,
+    async (req, res) => {
+
+        try {
+
+            const { companyid, graphicid } = req.params;
+
+            // Verify that the authenticated user
+            // has write access to this company.
+            // Apply the same company authorization
+            // policy as your upload route.
+
+            const graphicLogsHandler = new GraphicLogs();
+
+            const updatedGraphics =
+                await graphicLogsHandler.deleteGraphicLogImage(
+                    companyid,
+                    graphicid
+                );
+
+            return res.status(200).json({
+                message: 'Graphic image deleted successfully.',
+                graphiclogs: {
+                    companyid,
+                    graphics: updatedGraphics
+                }
+            });
+
+        } catch (error) {
+
+            console.error(
+                'Delete graphic log image error:',
+                error
+            );
+
+            return res.status(error.status || 500).json({
+                error: error.message
+            });
+        }
+    }
+);
 
  
 app.post(
@@ -1144,14 +1187,14 @@ app.post(
         try {
 
             const { companyid } = req.params;
-            const { graphicid } = req.body;
 
-            const graphics = JSON.parse(
-                req.body.graphics || '[]'
-            );
+            const {
+                graphicid,
+                code,
+                description
+            } = req.body;
 
-            // Verify the logged-in user has
-            // write access to this company.
+            // Enforce company-level write authorization here.
 
             const graphicLogsHandler = new GraphicLogs();
 
@@ -1160,7 +1203,10 @@ app.post(
                     req.file,
                     companyid,
                     graphicid,
-                    graphics
+                    {
+                        code,
+                        description
+                    }
                 );
 
             return res.status(200).json({
@@ -1177,13 +1223,12 @@ app.post(
                 error
             );
 
-            return res.status(500).json({
-                Error: error.message
+            return res.status(error.status || 500).json({
+                error: error.message
             });
         }
     }
 );
-
 
 
   app.get("/gfk/loadprojects", checkSessionGFK, async (req, res) => {
